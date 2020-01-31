@@ -1,0 +1,14 @@
+.DS_Store
+.ipynb_checkpoints/
+.python-version
+__pycache__/
+bin/
+.virtual_documents
+bin
+dubins
+etc
+include
+lib
+python3
+pyvenv.cfg
+share
