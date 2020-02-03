@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib import animation
 
 from path import *
 
@@ -20,8 +21,7 @@ def circle_waypoint(domain=(0.0, 100.0), r=75, angle=0):
 
 class DubinsMOMAPF():
 
-    def __init__(self, n_agents=4, domain=(0.0, 100.00), radius=5.0, step=0.1, model=DUBINS, obstacles=None,**unused_settings):
-        print(unused_settings)
+    def __init__(self, n_agents=4, domain=(0.0, 100.00), radius=5.0, step=0.1, model=Vehicle.DUBINS, obstacles=None, metric=None, **unused_settings):
         self.start = [circle_waypoint(domain=domain, r=60, angle=2*np.pi*(0.1 + 0.8 * i/n_agents)) for i in range(n_agents)]
         self.goals = [circle_waypoint(domain=domain, r=80, angle=-2*np.pi*(0.1 + 0.8 * i/n_agents)) for i in range(n_agents)]
         self.r = radius
@@ -33,6 +33,7 @@ class DubinsMOMAPF():
         self._anim_paths = None
         self.sct = None
         self.obstacles=obstacles
+        self.metric = metric
         
     
     def waypoints_to_path(self, wps):
@@ -40,7 +41,7 @@ class DubinsMOMAPF():
 
     
     def agents_objectives(self, agents):
-        return agents_objectives(agents, r=self.r, step=self.step, model=self.model, obstacles=self.obstacles)
+        return agents_objectives(agents, r=self.r, step=self.step, model=self.model, obstacles=self.obstacles, metric=self.metric)
 
     def decode(self, vector):
         wps = []

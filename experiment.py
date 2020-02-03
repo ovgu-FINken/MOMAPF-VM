@@ -204,6 +204,10 @@ class ExperimentRunner:
             print("not saving logbook, job is None")
             return
         df = logbook_to_df(logbook)
+        df['job_seed'] = job['seed'],
+        df['job_index'] = job['index'],
+        df['experiment'] = job['experiment'],
+        df['run'] = job['run'],
         df.to_sql("logbooks", self.db, if_exists="append")
             
     

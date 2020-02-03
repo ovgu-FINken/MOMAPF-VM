@@ -3,7 +3,9 @@ import seaborn as sns
 import pandas as pd
 
 class ObstacleMap:
-    def __init__(self, size=(200, 200), offset=(0, 0), value=None):
+    def __init__(self, size=(200, 200), offset=(0, 0), value=None, filename=None):
+        if filename is not None:
+            value = np.load(filename)
         self.size = size
         self.offset = offset
         self.cmap = sns.cubehelix_palette(dark=0, light=1, rot=-.1, gamma=.25, reverse=True, as_cmap=True)
@@ -12,6 +14,7 @@ class ObstacleMap:
             self.size = value.shape
         else:
             self._map = np.zeros( size )
+    
     
     def precompute_distances(self, r=20):
         print("start precomputing values in distance array")
@@ -38,8 +41,6 @@ class ObstacleMap:
         except IndexError:
             pass
         return -5
-        
-            
     
     
     def heatmap(self, plot_range=None):
@@ -54,3 +55,22 @@ class ObstacleMap:
         heat = sns.heatmap(obstacle_df.pivot(index="y", columns="x", values="value"), cmap=self.cmap, center=0)
         heat.invert_yaxis()
         return heat
+    
+    def save(self, filename):
+        np.save(filename, self._map)
+        
+
+if __name__ == "__main__":
+    values = np.ones((200, 200))
+    values[0,:] = -5
+    values[-1,:] = -5
+    values[:,0] = -5
+    values[:,-1] = -5
+    values[70:-70,95:-95] = -5
+    values[95:105,-50:-1] = -5
+    values[95:105,30:100] = -5
+
+    obstacles = ObstacleMap(value=values)
+    obstacles.precompute_distances()
+
+    obstacles.save("cross.obstacles")
