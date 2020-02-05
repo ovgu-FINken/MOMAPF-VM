@@ -142,8 +142,15 @@ def logbook_to_df(logbook):
             data_i[f"f_{i}_max"] = log['max'][i]
         data.append(data_i)
     return pd.DataFrame(data)
+  
     
-    
+def get_key(filename="db.key"):
+    s = None
+    with open(filename) as f:
+        s = f.read()[:-1]
+    return s   
+
+
 class ExperimentRunner:
     def __init__(self, db):
         assert db.has_table("jobs")
@@ -300,7 +307,7 @@ def add_jobs_to_db(settings, db=None, name=None, time=-1, pid=-1, user="default"
     df_jobs.to_sql("jobs", con=db, if_exists="replace") 
     
 if __name__ == "__main__":
-    engine = sqlalchemy.create_engine('sqlite:///experiments.db')
+    engine = sqlalchemy.create_engine(get_key(filename="db.key"))
     runner = ExperimentRunner(engine)
     running = True
     while running:

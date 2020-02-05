@@ -5,7 +5,7 @@ from experiment import *
 from time import sleep
 
 
-engine = sqlalchemy.create_engine('sqlite:///experiments.db')
+engine = sqlalchemy.create_engine(get_key(filename="db.key"))
 notify_chat_ids = set()
 
 
@@ -68,8 +68,11 @@ if __name__ == "__main__":
             if JobStatus.TODO.value not in df["status"].values:
                 done = True
                 msg = "Done, all jobs completed or failed"
-        if msg is not None:
-            print(msg)
-            for chat in notify_chat_ids:
-                updater.bot.send_message(chat, msg)
+        if msg is None:
+            msg = job_status_msg()
+        print(msg)
+        for chat in notify_chat_ids:
+            updater.bot.send_message(chat, msg)
+        
+        sleep(600)
 
