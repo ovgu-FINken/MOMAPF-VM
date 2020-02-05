@@ -13,3 +13,4 @@ python3
 pyvenv.cfg
 share
 experiments.db
+telegram.key

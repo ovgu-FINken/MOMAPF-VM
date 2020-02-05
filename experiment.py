@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import numpy as np
 
 import cProfile
@@ -8,13 +9,21 @@ import git
 import pickle
 import traceback
 import warnings
+import os
+import time
 
+from enum import Enum
 from deap import base, creator, tools, algorithms
 
 from problem import *
 from obstacle_map import *
 
-
+class JobStatus(Enum):
+    TODO = 0
+    IN_PROGRESS = 1
+    DONE = 2
+    FAILED = 3
+    
 class Experiment:
     def __init__(self, settings):
         self.settings = settings
@@ -147,23 +156,29 @@ class ExperimentRunner:
         #self.table_logs = sqlalchemy.Table('logs', self.metadata, autoload=True)
     
     def fetch_job(self):
-        select = sqlalchemy.sql.select([self.table_jobs]).where(self.table_jobs.c.status == 0)
+        select = sqlalchemy.sql.select([self.table_jobs]).where(self.table_jobs.c.status == JobStatus.TODO.value)
         r = self.db.execute(select)
         row = r.fetchone()
         r.close()
+        if row is None:
+            return
         if row[self.table_jobs.c.commit] != get_commit():
             print("WARNING: commits do not match")
         job = {}
         for col in self.table_jobs.columns.keys():
             job[str(col)] = row[col]
         job['settings'] = pickle.loads(job['settings'])
+        print(f"fetched job: {job}")
         return job
 
-    def set_job_status(self, job=None, status=1):
+    def set_job_status(self, job=None, status=None, time=0):
+        assert(status is not None)
         if job is None:
             print("trying to set job None to active")
             return
-        update = self.table_jobs.update().where(self.table_jobs.c.index == job['index']).values(status=status)
+        update = self.table_jobs.update()\
+            .where(self.table_jobs.c.index == job['index'])\
+            .values(status=status.value, pid=os.getpid(), time=int(time))
         self.db.execute(update).close()
         
     def execute_job(self, job=None):
@@ -177,12 +192,24 @@ class ExperimentRunner:
         return result
     
     def fetch_and_execute(self):
+        """fetch jobs with the TODO-status from the DB and run the experiment.
+        
+        1. Fetch Job
+        2. Set Job-status to running
+        3. Execute Experiment
+        4. a) Save Results and set job-status to DONE
+        4. b) In case of exception set job-status to FAIL
+        
+        """
         job = self.fetch_job()
         if job is None:
             return False
-        self.set_job_status(job, status=1)
+        # TODO: check if job is taken by other process after updating table
+        self.set_job_status(job, status=JobStatus.IN_PROGRESS)
         try:
+            start_time = time.time()
             pop, log = self.execute_job(job)
+            job_time = time.time() - start_time
             # save results
             self.save_population(job=job, population=pop)
             self.save_logbook(job=job, logbook=log)
@@ -190,9 +217,10 @@ class ExperimentRunner:
             print("experiment failed, resetting job status")
             print(e)
             traceback.print_last()
-            self.set_job_status(job, status=0)
+            self.set_job_status(job, status=JobStatus.FAILED)
             raise e
-        self.set_job_status(job, status=2)
+        # TODO: save time in job table
+        self.set_job_status(job, status=JobStatus.DONE, time=job_time)
         self.experiment = None
         return True
     
@@ -204,10 +232,10 @@ class ExperimentRunner:
             print("not saving logbook, job is None")
             return
         df = logbook_to_df(logbook)
-        df['job_seed'] = job['seed'],
-        df['job_index'] = job['index'],
-        df['experiment'] = job['experiment'],
-        df['run'] = job['run'],
+        df['job_seed'] = job['seed']
+        df['job_index'] = job['index']
+        df['experiment'] = job['experiment']
+        df['run'] = job['run']
         df.to_sql("logbooks", self.db, if_exists="append")
             
     
@@ -245,7 +273,31 @@ class ExperimentRunner:
                 data.append(i_data)
         df = pd.DataFrame(data)
         df.to_sql("populations", self.db, if_exists="append")
-    
+        
+        
+def add_jobs_to_db(settings, db=None, name=None, time=-1, pid=-1, user="default", runs=31, delete=False):
+    """Add new jobs (runs) to the experiment db with the given settings."""
+    assert(name is not None)
+    assert(db is not None)
+    df_jobs = None
+    if not delete:
+        df_jobs = pd.read_sql_table("jobs", con=db, index_col="index")
+    jobs = [{
+        "experiment" : name,
+        "run" : i,
+        "seed": i+1000,
+        "status": JobStatus.TODO.value,
+        "commit": get_commit(),
+        "user": user,
+        "time": time,
+        "pid": pid,
+        "settings": pickle.dumps(settings)
+    } for i in range(runs)]
+    if delete:
+        df_jobs = pd.DataFrame(jobs)
+    else:
+        df_jobs = df_jobs.append(jobs, ignore_index=True)
+    df_jobs.to_sql("jobs", con=db, if_exists="replace") 
     
 if __name__ == "__main__":
     engine = sqlalchemy.create_engine('sqlite:///experiments.db')

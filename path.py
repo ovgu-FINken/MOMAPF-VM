@@ -147,7 +147,7 @@ def robustness_from_paths(paths, obstacles=None, metric=None):
             d_obstacles.append(d_a_min)
     if collision:
         return collision_value 
-    d_agents = np.array(d_obstacles) / 2
+    d_agents = np.array(d_obstacles) * 2
     for configuration in itertools.zip_longest(*paths):
         d_agents = np.min([d_agents, min_dist_per_agent(configuration)], axis=0)
     if metric is None or metric is Metric.MIN:
