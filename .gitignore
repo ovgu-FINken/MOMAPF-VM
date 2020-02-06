@@ -14,3 +14,4 @@ pyvenv.cfg
 share
 experiments.db
 *.key
+*.mp4

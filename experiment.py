@@ -282,6 +282,7 @@ class ExperimentRunner:
         df.to_sql("populations", self.db, if_exists="append")
         
         
+        
 def add_jobs_to_db(settings, db=None, name=None, time=-1, pid=-1, user="default", runs=31, delete=False):
     """Add new jobs (runs) to the experiment db with the given settings."""
     assert(name is not None)
@@ -304,7 +305,41 @@ def add_jobs_to_db(settings, db=None, name=None, time=-1, pid=-1, user="default"
         df_jobs = pd.DataFrame(jobs)
     else:
         df_jobs = df_jobs.append(jobs, ignore_index=True)
-    df_jobs.to_sql("jobs", con=db, if_exists="replace") 
+    df_jobs.to_sql("jobs", con=db, if_exists="replace")
+        
+
+def get_names(db):
+    df_pop = pd.read_sql("populations", con=db)
+    print(df_pop["experiment"].unique())
+    
+    
+def read_experiment(db, name=None):
+    df_pop = pd.read_sql("populations", con=db)
+    df_stats = pd.read_sql("logbooks", con=db)
+    if name is not None:
+        return df_pop.loc[df_pop['experiment']==name], df_stats.loc[df_stats['experiment']==name]
+    return df_pop, df_stats
+
+def fetch_settings(df_jobs, job_index=None):
+    assert(job_index is not None)
+    row = df_jobs.loc[df_jobs.index == job_index]
+    s = row.iloc[0]
+    return pickle.loads(s["settings"])
+
+def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file=None):
+    """creates a plot from the individual in resulting dataframe"""
+    settings = fetch_settings(df_jobs, job_index=row['job_index'])
+    ex = Experiment(settings)
+    ex.setup()
+    ind = pickle.loads(row['value'])
+    if plot:
+        ex.problem.solution_plot(ind)
+    if animation:
+        ex.problem.solution_animation(ind, filename=animation_file)
+    return settings, ex
+    
+    
+    
     
 if __name__ == "__main__":
     engine = sqlalchemy.create_engine(get_key(filename="db.key"))
