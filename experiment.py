@@ -18,6 +18,10 @@ from deap import base, creator, tools, algorithms
 from problem import *
 from obstacle_map import *
 
+
+
+
+
 class JobStatus(Enum):
     TODO = 0
     IN_PROGRESS = 1
@@ -54,7 +58,45 @@ class Experiment:
         self.toolbox.register("mate", self.problem.crossover)
         self.toolbox.register("mutate", self.problem.all_mutations, p=self.settings['mutation_p'], sigma=self.settings['sigma'])
         self.toolbox.register("select", tools.selNSGA2)
+        
+    def pop_to_df(self, population):
+        data = []
+        fronts = tools.sortNondominated(population, len(population))
+        for i, front in enumerate(fronts):
+            for j, ind in enumerate(front):
+                f = self.problem.evaluate(ind)
+                feasible = "feasible"
+                if f[0] > self.settings['feasiblity_threshold']:
+                    feasible = "infeasible"
+                i_data = {
+                    'front' : i,
+                    'non_dominated': i == 0,
+                    'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
+                    'individual': j,
+                    'value': pickle.dumps(ind),
+                    'robustness' : f[0],
+                    'flowtime' : f[1],
+                    'makespan' : f[2],
+                    'collision' : feasible,
+                }
+                data.append(i_data)
+        return pd.DataFrame(data)
     
+    def hypervolume2(self, df, objective_1="robustness", objective_2="flowtime"):
+        ref = self.settings["hv_ref"]
+        x_last = ref[0]
+        hv = 0
+        for i, x in df.loc[df.non_dominated].sort_values(by=[objective_1], ascending=False).iterrows():
+            delta_f1 = x_last - x[objective_1]
+            delta_f2 = ref[1] - x[objective_2]
+            if delta_f1 > 0 and delta_f2 > 0:
+                hv += delta_f1 * delta_f2
+            x_last = x[objective_1]
+        return hv
+    
+    def _hv_pop(self, pop):
+        return self.hypervolume2(self.pop_to_df(pop))
+
     def run(self):
         # for compatibility
         settings = self.settings
@@ -67,7 +109,7 @@ class Experiment:
         stats.register("max", np.max, axis=0)
 
         logbook = tools.Logbook()
-        logbook.header = "gen", "evals", "std", "min", "avg", "max"
+        logbook.header = "gen", "evals", "min", "max", "median", "hv"
 
         pop = toolbox.population(n=settings['population_size'])
         pop = toolbox.select(pop, settings['population_size']) # for computing crowding distance
@@ -75,6 +117,7 @@ class Experiment:
         for ind in pop:
             ind.fitness.values = toolbox.evaluate(ind)
         record = stats.compile(pop)
+        record["hv"] = self._hv_pop(pop)
         logbook.record(gen=0, evals=len(pop), **record)
         print(logbook.stream)
         for ind in pop:
@@ -115,6 +158,7 @@ class Experiment:
             # even needs to be done, if infeasible solutions exist, because crowding distance needs to be computed
             pop = toolbox.select(pop_feasible, settings['population_size'])
             record = stats.compile(pop)
+            record["hv"] = self._hv_pop(pop)
             logbook.record(gen=g, evals=evals, **record)
             print(logbook.stream)
 
@@ -218,7 +262,7 @@ class ExperimentRunner:
             pop, log = self.execute_job(job)
             job_time = time.time() - start_time
             # save results
-            self.save_population(job=job, population=pop)
+            self.save_population(self.experiment.pop_to_df(pop), job=job)
             self.save_logbook(job=job, logbook=log)
         except Exception as e:
             print("experiment failed, resetting job status")
@@ -242,56 +286,42 @@ class ExperimentRunner:
         df['job_seed'] = job['seed']
         df['job_index'] = job['index']
         df['experiment'] = job['experiment']
+        df['group'] = job['group']
         df['run'] = job['run']
         df.to_sql("logbooks", self.db, if_exists="append")
             
+
+        
     
-    def save_population(self, population=None, job=None):
+    def save_population(self, df, job=None):
         if population is None:
             print("not saving population None")
             return
         if job is None:
             print("not saving population, job is None")
             return
-        data = []
         
-        fronts = tools.sortNondominated(population, len(population))
-        for i, front in enumerate(fronts):
-            for j, ind in enumerate(front):
-                f = self.experiment.problem.evaluate(ind)
-                feasible = "feasible"
-                if f[0] > job['settings']['feasiblity_threshold']:
-                    feasible = "infeasible"
-                i_data = {
-                    'front' : i,
-                    'non_dominated': i == 0,
-                    'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
-                    'individual': j,
-                    'value': pickle.dumps(ind),
-                    'robustness' : f[0],
-                    'flowtime' : f[1],
-                    'makespan' : f[2],
-                    'collision' : feasible,
-                    'job_seed' : job['seed'],
-                    'job_index' : job['index'],
-                    'experiment' : job['experiment'],
-                    'run' : job['run'],
-                }
-                data.append(i_data)
-        df = pd.DataFrame(data)
+        df = self.pop_to_df(population)
+        df['job_seed'] = job['seed']
+        df['job_index'] = job['index']
+        df['experiment'] = job['experiment']
+        df['group'] = job['group']
+        df['run'] = job['run']
         df.to_sql("populations", self.db, if_exists="append")
         
         
         
-def add_jobs_to_db(settings, db=None, name=None, time=-1, pid=-1, user="default", runs=31, delete=False):
+def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=-1, user="default", runs=31, delete=False):
     """Add new jobs (runs) to the experiment db with the given settings."""
-    assert(name is not None)
+    assert(experiment is not None)
     assert(db is not None)
+    if group is None:
+        group = "default"
     df_jobs = None
     if not delete:
         df_jobs = pd.read_sql_table("jobs", con=db, index_col="index")
     jobs = [{
-        "experiment" : name,
+        "experiment" : experiment,
         "run" : i,
         "seed": i+1000,
         "status": JobStatus.TODO.value,
@@ -299,6 +329,7 @@ def add_jobs_to_db(settings, db=None, name=None, time=-1, pid=-1, user="default"
         "user": user,
         "time": time,
         "pid": pid,
+        "group" : group,
         "settings": pickle.dumps(settings)
     } for i in range(runs)]
     if delete:
@@ -312,12 +343,31 @@ def get_names(db):
     df_pop = pd.read_sql("populations", con=db)
     print(df_pop["experiment"].unique())
     
+def jobs(db):
+    df_jobs = pd.read_sql_table("jobs", con=db)
+    return df_jobs
     
-def read_experiment(db, name=None):
+    
+def read_experiment(db, name=None, verbose=False):
     df_pop = pd.read_sql("populations", con=db)
     df_stats = pd.read_sql("logbooks", con=db)
+        
     if name is not None:
-        return df_pop.loc[df_pop['experiment']==name], df_stats.loc[df_stats['experiment']==name]
+        df_pop, df_stats = df_pop.loc[df_pop['experiment']==name], df_stats.loc[df_stats['experiment']==name]
+    
+    if verbose:
+        data = []
+        for exp in df_pop["experiment"].unique():
+            ji = df_pop.loc[df_pop["experiment"] == exp]["job_index"].values[0]
+            settings = fetch_settings(jobs(db), job_index=ji)
+            settings["mutp_0"] = settings["mutation_p"][0]
+            settings["mutp_1"] = settings["mutation_p"][1]
+            settings["mutp_2"] = settings["mutation_p"][2]
+            settings["experiment"] = exp
+            data.append(settings)
+        df = pd.DataFrame(data)
+        df_pop = df_pop.join(df.set_index("experiment"), on="experiment")
+        df_stats = df_stats.join(df.set_index("experiment"), on="experiment")
     return df_pop, df_stats
 
 def fetch_settings(df_jobs, job_index=None):

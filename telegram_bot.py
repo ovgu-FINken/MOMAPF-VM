@@ -15,17 +15,17 @@ engine = sqlalchemy.create_engine(get_key(filename="db.key"))
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-def jobs():
-    df_jobs = pd.read_sql_table("jobs", con=engine)
-    return df_jobs
 
 def job_status_msg():
-    df = jobs()
-    vc = df["status"].value_counts()
+    df = jobs(engine)
     s = ""
-    for value in df["status"].unique():
-        status = JobStatus(value)
-        s += f"{status.name}: {vc[value]}\n"
+    for group in df["group"].unique():
+        s += f"group {group}\n"
+        for value in df.loc[df["group"]==group]["status"].unique():
+            vc = df.loc[df["group"] == group]["status"].value_counts()
+            status = JobStatus(value)
+            s += f"{status.name}: {vc[value]}\n"
+        s += "\n"
     return s 
 
 
@@ -43,10 +43,12 @@ class TBot:
         self.dispatcher.add_handler(self.echo_handler)
         self.add_handler(name="status", function=self.status)
         self.add_handler(name="notify", function=self.notify)
+        self.add_handler(name="unsubscribe", function=self.unsubscribe)
         self.add_handler(name="help", function=self.commands)
         self.add_handler(name="commands", function=self.commands)
         self.add_handler(name="start", function=self.commands)
         self.add_handler(name="plot", function=self.scatterplot)
+        self.add_handler(name="convergence", function=self.convergence_plot)
         self.add_handler(name="test", function=self.test)
 
         
@@ -60,6 +62,11 @@ class TBot:
         print(f"register {chat_id} for notification")
         context.bot.send_message(chat_id=update.effective_chat.id, text="Hello, registered for updates.")
 
+    def unsubscribe(self, update, context):
+        chat_id = update.message.chat_id
+        self.notify_chat_ids.remove(chat_id)
+        print(f"deregister {chat_id} for notification")
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Succesfully unsubscribed.")
 
     def echo(self, update, context):
         context.bot.send_message(chat_id=update.effective_chat.id, text=update.message.text)
@@ -84,7 +91,7 @@ class TBot:
         context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
     
     def loop(self):
-        df = jobs()
+        df = jobs(engine)
         msg = None
         if not self.nearly_done:
             if JobStatus.TODO.value not in df["status"].values:
@@ -106,14 +113,19 @@ class TBot:
         self.updater.bot.send_message(self.parse_error_chat_id, message)
             
     def scatterplot(self, update, context):
-        df_pop, _ = read_experiment(engine)
+        df_pop, _ = read_experiment(engine, verbose=True)
         parser = argparse.ArgumentParser('Plot argument parsing')
         columns = list(df_pop.keys())
         experiments = list(df_pop["experiment"].unique())
+        groups = list(df_pop["group"].unique())
         parser.add_argument("-x", default="robustness", choices=columns)
         parser.add_argument("-y", default="flowtime", choices=columns)
         parser.add_argument("-hue", default="experiment", choices=columns)
+        parser.add_argument("-row", default=None, choices=columns)
+        parser.add_argument("-col", default=None, choices=columns)
+        parser.add_argument("-style", default=None, choices=columns)
         parser.add_argument("-experiment", choices=experiments)
+        parser.add_argument("-group", choices=groups)
         self.parse_error = False
         self.parse_error_chat_id = update.effective_chat.id
         parser.exit = self.parse_error_message
@@ -125,22 +137,80 @@ class TBot:
             return
         
         context.bot.send_message(chat_id=update.effective_chat.id, text=str(plot_args))
+        if plot_args.group is not None:
+            df_pop = df_pop.loc[df_pop["group"] == plot_args.group]
         
         if plot_args.experiment is not None:
             df_pop = df_pop.loc[df_pop["experiment"] == plot_args.experiment]
-        fig = plt.figure()
-        sns.scatterplot(data=df_pop.loc[df_pop["non_dominated"]],
+        with plt.xkcd():
+            rp = sns.relplot(data=df_pop.loc[df_pop["non_dominated"]],
+                            x=plot_args.x,
+                            y=plot_args.y,
+                            hue=plot_args.hue,
+                            style=plot_args.style,
+                            row=plot_args.row,
+                            col=plot_args.col,
+                            alpha=.25
+                            )#, palette="jet")
+            
+            #plt.tight_layout()
+            buffer = io.BytesIO()
+            rp.fig.savefig(buffer, format='png')
+
+            buffer.seek(0)
+            print("plotting ...")
+            #plt.show()
+            context.bot.send_photo(chat_id=update.effective_chat.id, photo=buffer, text="Plot")
+    
+    def convergence_plot(self, update, context):
+        _, df_stats = read_experiment(engine, verbose=True)
+        parser = argparse.ArgumentParser('Plot argument parsing')
+        columns = list(df_stats.keys())
+        experiments = list(df_stats["experiment"].unique())
+        groups = list(df_stats["group"].unique())
+        parser.add_argument("-x", default="generation", choices=columns)
+        parser.add_argument("-y", default="f_0_min", choices=columns)
+        parser.add_argument("-hue", default="experiment", choices=columns)
+        parser.add_argument("-row", default=None, choices=columns)
+        parser.add_argument("-col", default=None, choices=columns)
+        parser.add_argument("-style", default=None, choices=columns)
+        parser.add_argument("-experiment", choices=experiments)
+        parser.add_argument("-group", choices=groups)
+        self.parse_error = False
+        self.parse_error_chat_id = update.effective_chat.id
+        parser.exit = self.parse_error_message
+        plot_args = parser.parse_args(context.args)
+        if self.parse_error:
+            s = parser.format_usage()
+            print(s)
+            context.bot.send_message(chat_id=update.effective_chat.id, text=s)
+            return
+        
+        context.bot.send_message(chat_id=update.effective_chat.id, text=str(plot_args))
+        if plot_args.group is not None:
+            df_stats = df_stats.loc[df_stats["group"] == plot_args.group]
+        
+        if plot_args.experiment is not None:
+            df_stats = df_stats.loc[df_stats["experiment"] == plot_args.experiment]
+        rp = sns.relplot(data=df_stats,
                         x=plot_args.x,
                         y=plot_args.y,
                         hue=plot_args.hue,
-                        alpha=.5)#, palette="jet")
+                        style=plot_args.style,
+                        row=plot_args.row,
+                        col=plot_args.col,
+                        kind="line",
+                        alpha=0.5
+                        )#, palette="jet")
+
+        #plt.tight_layout()
         buffer = io.BytesIO()
-        fig.savefig(buffer, format='png')
+        rp.fig.savefig(buffer, format='png')
 
         buffer.seek(0)
-        print("potting ...")
-        context.bot.send_photo(chat_id=update.effective_chat.id, photo=buffer, text="Plot")
-    
+        print("plotting ...")
+        #plt.show()
+        context.bot.send_photo(chat_id=update.effective_chat.id, photo=buffer, text="Convergence Plot")
 
 if __name__ == "__main__":
     print(job_status_msg())
@@ -148,5 +218,5 @@ if __name__ == "__main__":
     tbot.updater.start_polling()
     while True:
         tbot.loop()
-        sleep(6000)
+        sleep(3600)
 
