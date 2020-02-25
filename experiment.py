@@ -11,13 +11,15 @@ import traceback
 import warnings
 import os
 import time
+from multiprocessing import Pool, TimeoutError
+import multiprocessing
+import logging
 
 from enum import Enum
 from deap import base, creator, tools, algorithms
 
 from problem import *
 from obstacle_map import *
-
 
 
 
@@ -87,17 +89,20 @@ class Experiment:
         x_last = ref[0]
         hv = 0
         for i, x in df.loc[df.non_dominated].sort_values(by=[objective_1], ascending=False).iterrows():
+            if x[objective_1] > ref[0]:
+                continue
+            if x[objective_2] > ref[1]:
+                continue
             delta_f1 = x_last - x[objective_1]
             delta_f2 = ref[1] - x[objective_2]
-            if delta_f1 > 0 and delta_f2 > 0:
-                hv += delta_f1 * delta_f2
+            hv += delta_f1 * delta_f2
             x_last = x[objective_1]
         return hv
     
     def _hv_pop(self, pop):
         return self.hypervolume2(self.pop_to_df(pop))
 
-    def run(self):
+    def run(self, verbose=False):
         # for compatibility
         settings = self.settings
         toolbox = self.toolbox
@@ -119,7 +124,8 @@ class Experiment:
         record = stats.compile(pop)
         record["hv"] = self._hv_pop(pop)
         logbook.record(gen=0, evals=len(pop), **record)
-        print(logbook.stream)
+        if verbose:
+            print(logbook.stream)
         for ind in pop:
             ind.fitness.values = toolbox.evaluate(ind)
             
@@ -160,7 +166,8 @@ class Experiment:
             record = stats.compile(pop)
             record["hv"] = self._hv_pop(pop)
             logbook.record(gen=g, evals=evals, **record)
-            print(logbook.stream)
+            if verbose:
+                print(logbook.stream)
 
         for ind in pop:
             ind.fitness.values = toolbox.evaluate(ind)
@@ -179,6 +186,7 @@ def logbook_to_df(logbook):
         data_i = {
             "generation": log['gen'],
             "evals": evals,
+            "hv": log["hv"]
         }
         for i, _ in enumerate(log['median']):
             data_i[f"f_{i}_median"] = log['median'][i]
@@ -188,6 +196,20 @@ def logbook_to_df(logbook):
     return pd.DataFrame(data)
   
     
+def execute_job(job=None):
+    if job is None:
+        print("no job provided")
+        return
+    start_time = time.time()
+    experiment = Experiment(job['settings'])
+    experiment.setup()
+    experiment.seed(job['seed'])
+    pop, log = experiment.run()
+    pop = experiment.pop_to_df(pop)
+    job_time = time.time() - start_time
+    return pop, log, job_time
+
+
 def get_key(filename="db.key"):
     s = None
     with open(filename) as f:
@@ -232,15 +254,6 @@ class ExperimentRunner:
             .values(status=status.value, pid=os.getpid(), time=int(time))
         self.db.execute(update).close()
         
-    def execute_job(self, job=None):
-        if job is None:
-            print("no job provided")
-            return
-        self.experiment = Experiment(job['settings'])
-        self.experiment.setup()
-        self.experiment.seed(job['seed'])
-        result = self.experiment.run()
-        return result
     
     def fetch_and_execute(self):
         """fetch jobs with the TODO-status from the DB and run the experiment.
@@ -255,26 +268,66 @@ class ExperimentRunner:
         job = self.fetch_job()
         if job is None:
             return False
+        return self.execute_and_save(job)
+
+    def save_results(self, res, job):
+        pop, log, job_time = res
+        self.save_population(pop, job=job)
+        self.save_logbook(job=job, logbook=log)
+        self.set_job_status(job, status=JobStatus.DONE, time=job_time)
+
+    def execute_and_save(self, job):
         # TODO: check if job is taken by other process after updating table
+        print(f"excuting job {job['index']}")
         self.set_job_status(job, status=JobStatus.IN_PROGRESS)
         try:
-            start_time = time.time()
-            pop, log = self.execute_job(job)
-            job_time = time.time() - start_time
+            res = execute_job(job)
             # save results
-            self.save_population(self.experiment.pop_to_df(pop), job=job)
-            self.save_logbook(job=job, logbook=log)
-        except Exception as e:
-            print("experiment failed, resetting job status")
-            print(e)
-            traceback.print_last()
+            save_results(res, job)
+        except:
             self.set_job_status(job, status=JobStatus.FAILED)
-            raise e
-        # TODO: save time in job table
-        self.set_job_status(job, status=JobStatus.DONE, time=job_time)
-        self.experiment = None
+            raise
         return True
     
+    def execute_pool(self, workers=2):
+        with Pool(processes=workers) as pool:
+            job = self.fetch_job()
+            jobs = {}
+            handles = {}
+            try:
+                while job is not None or len(handles.keys()) > 0:
+                    if job is not None:
+                        self.set_job_status(job, status=JobStatus.IN_PROGRESS)
+                        jobs[job['index']] = job
+                        handles[job['index']] = pool.apply_async(execute_job, (job,))
+                        print(f"starting job {job['index']}.")
+                    #handles.append(pool.apply_async(time.sleep, (3,)))
+                    #print(handles)
+                    while len(handles.keys()) >= workers:
+                        time.sleep(5)
+                        completed = []
+                        for k, v in handles.items():
+                            if v.ready():
+                                completed.append(k)
+                                if v.successful():
+                                    self.save_results(v.get(), jobs[k])
+                                    print(f"job {k} successful")
+                                else:
+                                    self.set_job_status(jobs[k], status=JobStatus.FAILED)
+                                    print(f"job {k} failed")
+                        for k in completed:
+                            del handles[k]
+                            del jobs[k]
+                    time.sleep(1)
+                    job = self.fetch_job()
+            except:
+                for k, v in jobs.items():
+                    self.set_job_status(v, status=JobStatus.FAILED)
+                raise
+        return True
+
+
+
     def save_logbook(self, logbook=None, job=None):
         if logbook is None:
             print("not saving logbook None")
@@ -294,14 +347,10 @@ class ExperimentRunner:
         
     
     def save_population(self, df, job=None):
-        if population is None:
-            print("not saving population None")
-            return
         if job is None:
             print("not saving population, job is None")
             return
         
-        df = self.pop_to_df(population)
         df['job_seed'] = job['seed']
         df['job_index'] = job['index']
         df['experiment'] = job['experiment']
@@ -392,9 +441,9 @@ def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file
     
     
 if __name__ == "__main__":
+    mpl = multiprocessing.log_to_stderr()
+    mpl.setLevel(logging.INFO)
     engine = sqlalchemy.create_engine(get_key(filename="db.key"))
     runner = ExperimentRunner(engine)
-    running = True
-    while running:
-        running = runner.fetch_and_execute()
+    runner.execute_pool(workers=4)
     

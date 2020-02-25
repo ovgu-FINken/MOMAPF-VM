@@ -169,7 +169,7 @@ class TBot:
         experiments = list(df_stats["experiment"].unique())
         groups = list(df_stats["group"].unique())
         parser.add_argument("-x", default="generation", choices=columns)
-        parser.add_argument("-y", default="f_0_min", choices=columns)
+        parser.add_argument("-y", default="hv", choices=columns)
         parser.add_argument("-hue", default="experiment", choices=columns)
         parser.add_argument("-row", default=None, choices=columns)
         parser.add_argument("-col", default=None, choices=columns)
