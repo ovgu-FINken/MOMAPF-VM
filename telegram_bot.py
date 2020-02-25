@@ -1,4 +1,5 @@
 import sqlalchemy
+import numpy as np
 import pandas as pd
 import seaborn as sns
 from telegram.ext import Updater, MessageHandler, Filters, CommandHandler
@@ -39,8 +40,6 @@ class TBot:
         self.dispatcher = self.updater.dispatcher
         self.parse_error_chat_id = None
 
-        self.echo_handler = MessageHandler(Filters.text, self.echo)
-        self.dispatcher.add_handler(self.echo_handler)
         self.add_handler(name="status", function=self.status)
         self.add_handler(name="notify", function=self.notify)
         self.add_handler(name="unsubscribe", function=self.unsubscribe)
@@ -50,6 +49,9 @@ class TBot:
         self.add_handler(name="plot", function=self.scatterplot)
         self.add_handler(name="convergence", function=self.convergence_plot)
         self.add_handler(name="test", function=self.test)
+
+        self.echo_handler = MessageHandler(Filters.text, self.echo)
+        self.dispatcher.add_handler(self.echo_handler)
 
         
     def add_handler(self, name=None, function=None):
@@ -200,7 +202,9 @@ class TBot:
                         row=plot_args.row,
                         col=plot_args.col,
                         kind="line",
-                        alpha=0.5
+                        alpha=0.5,
+                        ci=90,
+                        estimator=np.median,
                         )#, palette="jet")
 
         #plt.tight_layout()
