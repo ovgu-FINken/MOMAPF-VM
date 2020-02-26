@@ -6,7 +6,7 @@ import pstats
 import random
 import sqlalchemy
 import git
-import pickle
+import json
 import traceback
 import warnings
 import os
@@ -15,7 +15,7 @@ from multiprocessing import Pool, TimeoutError
 import multiprocessing
 import logging
 
-from enum import Enum
+from enum import IntEnum
 from deap import base, creator, tools, algorithms
 
 from problem import *
@@ -24,7 +24,7 @@ from obstacle_map import *
 
 
 
-class JobStatus(Enum):
+class JobStatus(IntEnum):
     TODO = 0
     IN_PROGRESS = 1
     DONE = 2
@@ -75,7 +75,7 @@ class Experiment:
                     'non_dominated': i == 0,
                     'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
                     'individual': j,
-                    'value': pickle.dumps(ind),
+                    'value': json.dumps(ind),
                     'robustness' : f[0],
                     'flowtime' : f[1],
                     'makespan' : f[2],
@@ -240,7 +240,7 @@ class ExperimentRunner:
         job = {}
         for col in self.table_jobs.columns.keys():
             job[str(col)] = row[col]
-        job['settings'] = pickle.loads(job['settings'])
+        job['settings'] = json.loads(job['settings'])
         print(f"fetched job: {job}")
         return job
 
@@ -366,9 +366,6 @@ def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=
     assert(db is not None)
     if group is None:
         group = "default"
-    df_jobs = None
-    if not delete:
-        df_jobs = pd.read_sql_table("jobs", con=db, index_col="index")
     jobs = [{
         "experiment" : experiment,
         "run" : i,
@@ -379,13 +376,15 @@ def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=
         "time": time,
         "pid": pid,
         "group" : group,
-        "settings": pickle.dumps(settings)
+        "settings": json.dumps(settings)
     } for i in range(runs)]
+    df_jobs = pd.DataFrame(jobs)
     if delete:
-        df_jobs = pd.DataFrame(jobs)
+        df_jobs.to_sql("jobs", con=db, if_exists="replace")
     else:
-        df_jobs = df_jobs.append(jobs, ignore_index=True)
-    df_jobs.to_sql("jobs", con=db, if_exists="replace")
+        old_jobs = pd.read_sql("jobs", con=db)
+        df_jobs.index = range(len(old_jobs), len(old_jobs) + len(df_jobs))
+        df_jobs.to_sql("jobs", con=db, if_exists="append")
         
 
 def get_names(db):
@@ -423,14 +422,14 @@ def fetch_settings(df_jobs, job_index=None):
     assert(job_index is not None)
     row = df_jobs.loc[df_jobs.index == job_index]
     s = row.iloc[0]
-    return pickle.loads(s["settings"])
+    return json.loads(s["settings"])
 
 def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file=None):
     """creates a plot from the individual in resulting dataframe"""
     settings = fetch_settings(df_jobs, job_index=row['job_index'])
     ex = Experiment(settings)
     ex.setup()
-    ind = pickle.loads(row['value'])
+    ind = json.loads(row['value'])
     if plot:
         ex.problem.solution_plot(ind)
     if animation:
@@ -445,5 +444,5 @@ if __name__ == "__main__":
     mpl.setLevel(logging.INFO)
     engine = sqlalchemy.create_engine(get_key(filename="db.key"))
     runner = ExperimentRunner(engine)
-    runner.execute_pool(workers=4)
+    runner.execute_pool(workers=70)
     
