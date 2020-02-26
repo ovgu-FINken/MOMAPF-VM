@@ -114,7 +114,7 @@ class Experiment:
         stats.register("max", np.max, axis=0)
 
         logbook = tools.Logbook()
-        logbook.header = "gen", "evals", "min", "max", "median", "hv"
+        logbook.header = "gen", "evals", "min", "max", "median", "hv", "walltime"
 
         pop = toolbox.population(n=settings['population_size'])
         pop = toolbox.select(pop, settings['population_size']) # for computing crowding distance
@@ -123,12 +123,14 @@ class Experiment:
             ind.fitness.values = toolbox.evaluate(ind)
         record = stats.compile(pop)
         record["hv"] = self._hv_pop(pop)
+        record["walltime"] = 0
         logbook.record(gen=0, evals=len(pop), **record)
         if verbose:
             print(logbook.stream)
         for ind in pop:
             ind.fitness.values = toolbox.evaluate(ind)
             
+        start_time = time.time()
         for g in range(1, settings['n_gens']):
             # Select and clone the next generation individuals
             #offspring = toolbox.clone(pop)
@@ -163,9 +165,11 @@ class Experiment:
                 pop_feasible = pop_feasible + tools.selBest(pop_infeasible, settings['population_size'] - len(pop))
             # even needs to be done, if infeasible solutions exist, because crowding distance needs to be computed
             pop = toolbox.select(pop_feasible, settings['population_size'])
-            record = stats.compile(pop)
-            record["hv"] = self._hv_pop(pop)
-            logbook.record(gen=g, evals=evals, **record)
+            if g % 10 == 0:
+                record = stats.compile(pop)
+                record["hv"] = self._hv_pop(pop)
+                record["walltime"] = time.time() - start_time
+                logbook.record(gen=g, evals=evals, **record)
             if verbose:
                 print(logbook.stream)
 
