@@ -6,7 +6,7 @@ import pstats
 import random
 import sqlalchemy
 import git
-import pickle
+import json
 import traceback
 import warnings
 import os
@@ -75,7 +75,7 @@ class Experiment:
                     'non_dominated': i == 0,
                     'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
                     'individual': j,
-                    'value': pickle.dumps(ind),
+                    'value': json.dumps(ind),
                     'robustness' : f[0],
                     'flowtime' : f[1],
                     'makespan' : f[2],
@@ -114,7 +114,7 @@ class Experiment:
         stats.register("max", np.max, axis=0)
 
         logbook = tools.Logbook()
-        logbook.header = "gen", "evals", "min", "max", "median", "hv"
+        logbook.header = "gen", "evals", "min", "max", "median", "hv", "walltime"
 
         pop = toolbox.population(n=settings['population_size'])
         pop = toolbox.select(pop, settings['population_size']) # for computing crowding distance
@@ -123,12 +123,14 @@ class Experiment:
             ind.fitness.values = toolbox.evaluate(ind)
         record = stats.compile(pop)
         record["hv"] = self._hv_pop(pop)
+        record["walltime"] = 0
         logbook.record(gen=0, evals=len(pop), **record)
         if verbose:
             print(logbook.stream)
         for ind in pop:
             ind.fitness.values = toolbox.evaluate(ind)
             
+        start_time = time.time()
         for g in range(1, settings['n_gens']):
             # Select and clone the next generation individuals
             #offspring = toolbox.clone(pop)
@@ -163,9 +165,11 @@ class Experiment:
                 pop_feasible = pop_feasible + tools.selBest(pop_infeasible, settings['population_size'] - len(pop))
             # even needs to be done, if infeasible solutions exist, because crowding distance needs to be computed
             pop = toolbox.select(pop_feasible, settings['population_size'])
-            record = stats.compile(pop)
-            record["hv"] = self._hv_pop(pop)
-            logbook.record(gen=g, evals=evals, **record)
+            if g % 10 == 0:
+                record = stats.compile(pop)
+                record["hv"] = self._hv_pop(pop)
+                record["walltime"] = time.time() - start_time
+                logbook.record(gen=g, evals=evals, **record)
             if verbose:
                 print(logbook.stream)
 
@@ -240,7 +244,7 @@ class ExperimentRunner:
         job = {}
         for col in self.table_jobs.columns.keys():
             job[str(col)] = row[col]
-        job['settings'] = pickle.loads(job['settings'])
+        job['settings'] = json.loads(job['settings'])
         print(f"fetched job: {job}")
         return job
 
@@ -379,7 +383,7 @@ def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=
         "time": time,
         "pid": pid,
         "group" : group,
-        "settings": pickle.dumps(settings)
+        "settings": json.dumps(settings)
     } for i in range(runs)]
     if delete:
         df_jobs = pd.DataFrame(jobs)
@@ -423,14 +427,14 @@ def fetch_settings(df_jobs, job_index=None):
     assert(job_index is not None)
     row = df_jobs.loc[df_jobs.index == job_index]
     s = row.iloc[0]
-    return pickle.loads(s["settings"])
+    return json.loads(s["settings"])
 
 def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file=None):
     """creates a plot from the individual in resulting dataframe"""
     settings = fetch_settings(df_jobs, job_index=row['job_index'])
     ex = Experiment(settings)
     ex.setup()
-    ind = pickle.loads(row['value'])
+    ind = json.loads(row['value'])
     if plot:
         ex.problem.solution_plot(ind)
     if animation:
