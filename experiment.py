@@ -141,12 +141,20 @@ class Experiment:
 
             # Apply crossover and mutation on the offspring
             for ind1, ind2 in zip(offspring[::2], offspring[1::2]):
+                change1, change2 = False, False
                 if np.random.rand() <= settings['cxpb']:
                     toolbox.mate(ind1, ind2)
-
-                toolbox.mutate(ind1)
-                toolbox.mutate(ind2)
+                    change1, change2 = True, True
+                
+                if not change1 or np.random.rand() <= settings['mutp']:
+                    change1 = True
+                    toolbox.mutate(ind1)
+                if not change2 or np.random.rand() <= settings['mutp']:
+                    change2 = True
+                    toolbox.mutate(ind2)
                 del ind1.fitness.values, ind2.fitness.values
+                assert(change1)
+                assert(change2)
 
             pop = pop + offspring
             evals = 0
