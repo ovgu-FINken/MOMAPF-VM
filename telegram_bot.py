@@ -107,7 +107,7 @@ class TBot:
         if msg is None and not self.done:
             msg = job_status_msg()
         else:
-            continue
+            return
         for chat in self.notify_chat_ids:
             self.updater.bot.send_message(chat, msg)
             
