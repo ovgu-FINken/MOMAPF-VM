@@ -4,15 +4,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import itertools
 
-from enum import Enum
+from enum import IntEnum
 
-class Vehicle(Enum):
+class Vehicle(IntEnum):
     DUBINS = 1
     STRAIGHT = 2
     RTR = 3
     REED_SHEPP = 4
 
-class Metric(Enum):
+class Metric(IntEnum):
     MIN = 1
     MEAN = 2
     MIXED = 3
@@ -150,11 +150,11 @@ def robustness_from_paths(paths, obstacles=None, metric=None):
     d_agents = np.array(d_obstacles) * 2
     for configuration in itertools.zip_longest(*paths):
         d_agents = np.min([d_agents, min_dist_per_agent(configuration)], axis=0)
-    if metric is None or metric is Metric.MIN:
+    if metric is None or metric == Metric.MIN:
         return np.min(d_agents)
-    if metric is Metric.MIXED:
+    if metric == Metric.MIXED:
         return np.min(d_agents) + np.mean(d_agents) / 1000
-    if metric is Metric.MEAN:
+    if metric == Metric.MEAN:
         return np.mean(d_agents)
     print("unkown metric")
     return None
