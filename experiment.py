@@ -498,7 +498,7 @@ def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=
         df_jobs.to_sql("jobs", con=db, if_exists="replace")
     else:
         old_jobs = pd.read_sql("jobs", con=db)
-        min_index = old_jobs.index.max()
+        min_index = old_jobs.index.max() + 1
         df_jobs.index = range(min_index, min_index + len(df_jobs))
         df_jobs.to_sql("jobs", con=db, if_exists="append")
         
