@@ -99,7 +99,7 @@ class Experiment:
     
     
     def _hv_pop(self, pop):
-        return self.hypervolume2(self.settings["hv_ref"],self.pop_to_df(pop))
+        return hypervolume2(self.settings["hv_ref"],self.pop_to_df(pop))
 
     def run(self, verbose=False):
         # for compatibility
@@ -145,10 +145,10 @@ class Experiment:
                     toolbox.mate(ind1, ind2)
                     change1, change2 = True, True
                 
-                if not change1 or np.random.rand() <= settings['mutp']:
+                if not change1 or np.random.rand() <= settings['mutpb']:
                     change1 = True
                     toolbox.mutate(ind1)
-                if not change2 or np.random.rand() <= settings['mutp']:
+                if not change2 or np.random.rand() <= settings['mutpb']:
                     change2 = True
                     toolbox.mutate(ind2)
                 del ind1.fitness.values, ind2.fitness.values
@@ -241,7 +241,7 @@ class ExperimentCoevolution:
     
     
     def _hv_pop(self, pop):
-        return self.hypervolume2(self.settings["hv_ref"],self.pop_to_df(pop))
+        return hypervolume2(self.settings["hv_ref"],self.pop_to_df(pop))
 
     def run(self, verbose=False):
         settings = self.settings
@@ -273,6 +273,7 @@ class ExperimentCoevolution:
         start_time = time.time()
         for g in range(1, settings['n_gens']):
             for agent in range(sub_populations):
+                pass
             
             
 
