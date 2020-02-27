@@ -70,6 +70,13 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.1, model=Vehicle.DUBINS
     return path
 
 
+def single_agent_objectives(agents, index, r=1, step=0.1, model=None, obstacles=None, metric=None):
+    paths = [waypoints_to_path(agent, r=r, step=step, model=model) for agent in agents]
+    robustness = single_robustness_from_paths(paths, i, obstacles=obstacles, metric=metric)
+    lp = len(paths[index])
+    return robustness, lp
+    
+
 def agents_objectives(agents, r=1, step=0.1, model=None, obstacles=None, metric=None):
     paths = [waypoints_to_path(agent, r=r, step=step, model=model) for agent in agents]
     robustness = robustness_from_paths(paths, obstacles=obstacles, metric=metric)
@@ -128,6 +135,57 @@ def min_dist_per_agent(configuration):
     m1 = np.min(m, axis=1)
     return np.sqrt(np.min([m0, m1], axis=0))
 
+def single_min_dist_per_agent(configuration,index):
+    if configuration[index] is None:
+        return np.inf
+    lc = len(configuration[index])
+    m = np.full((lc), np.inf)
+
+    for j in range(lc):
+        if configuration[j] is None:
+            continue
+        if j == index:
+            continue
+        d = (configuration[index][0] - configuration[j][0])**2
+        d += (configuration[index][1] - configuration[j][1])**2
+        m[j] = d
+    return np.sqrt(np.min([m], axis=0))
+
+
+def single_robustness_from_paths(paths, index, obstacles=None, metric=None):
+    d_obstacles = []
+    collision = False
+    collision_value = 0
+    agent = paths[index]
+    # checking obstacle cost
+    d_agent = []
+    for point in agent:
+        do = obstacles.get_value(point[0], point[1])
+        d_agent.append(do)
+    d_a_min = np.min(d_agent)
+    if d_a_min < 0 or collision:
+        collision = True
+        for value in d_agent:
+            if value < 0:
+                collision_value += -1 * 100 / len(d_agent) / len(paths)
+    else:
+        d_obstacles.append(d_a_min)
+    if collision:
+        return collision_value 
+    # if no collision check inter agent paths
+    d_agents = np.array(d_obstacles) * 2
+    for configuration in itertools.zip_longest(*paths):
+        d_agents = np.min([d_agents, single_min_dist_per_agent(configuration, index)], axis=0)
+    if metric is None or metric is Metric.MIN:
+        return np.min(d_agents)
+    if metric is Metric.MIXED:
+        return np.min(d_agents) + np.mean(d_agents) / 1000
+    if metric is Metric.MEAN:
+        return np.mean(d_agents)
+    print("unkown metric")
+    return None
+    
+    
 def robustness_from_paths(paths, obstacles=None, metric=None):
     d_obstacles = []
     collision = False

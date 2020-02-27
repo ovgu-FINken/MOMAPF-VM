@@ -48,7 +48,7 @@ class DubinsMOMAPF():
         for i, wp in enumerate(self.start):
             wps.append([wp])
         for i, wp in enumerate(zip(vector[0::3], vector[1::3], vector[2::3])):
-            wps[i%self.n_agents].append(wp)
+            wps[int(i * 3 / len(vector) * self.n_agents)].append(wp)
         for i, wp in enumerate(self.goals):
             wps[i].append(wp)
         return wps
@@ -56,10 +56,10 @@ class DubinsMOMAPF():
     def encode(self, agents):
         vector = []
         wps = [wp[1:-1] for wp in agents]
-        while len(wps[-1]) > 0:
-            for i, wp in enumerate(wps):
+        for i, wp in enumerate(wps):
+            while len(wp) > 0:
                 vector = vector + list(wp[0])
-                wps[i] = wp[1:]
+                wp = wp[1:]
         return vector
 
     def evaluate(self, vector):
