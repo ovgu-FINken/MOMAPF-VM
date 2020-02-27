@@ -498,7 +498,8 @@ def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=
         df_jobs.to_sql("jobs", con=db, if_exists="replace")
     else:
         old_jobs = pd.read_sql("jobs", con=db)
-        df_jobs.index = range(len(old_jobs), len(old_jobs) + len(df_jobs))
+        min_index = old_jobs.index.max()
+        df_jobs.index = range(min_index, min_index + len(df_jobs))
         df_jobs.to_sql("jobs", con=db, if_exists="append")
         
 
@@ -541,7 +542,7 @@ def read_experiment(db, name=None, verbose=False):
     if verbose:
         data = []
         for exp in df_pop["experiment"].unique():
-            ji = df_pop.loc[df_pop["experiment"] == exp]["job_index"].values[0]
+            ji = df_pop.loc[df_pop["experiment"] == exp, "job_index"].iloc[0]
             settings = fetch_settings(jobs(db), job_index=ji)
             settings["mutp_0"] = settings["mutation_p"][0]
             settings["mutp_1"] = settings["mutation_p"][1]
@@ -559,9 +560,8 @@ def read_experiment(db, name=None, verbose=False):
 
 def fetch_settings(df_jobs, job_index=None):
     assert(job_index is not None)
-    row = df_jobs.loc[df_jobs.index == job_index]
-    s = row.iloc[0]
-    return json.loads(s["settings"])
+    s = df_jobs.loc[df_jobs.index == job_index, "settings"].iloc[0]
+    return json.loads(s)
 
 def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file=None):
     """creates a plot from the individual in resulting dataframe"""
