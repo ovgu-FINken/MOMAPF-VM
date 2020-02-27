@@ -561,7 +561,7 @@ def read_experiment(db, name=None, verbose=False):
 
 def fetch_settings(df_jobs, job_index=None):
     assert(job_index is not None)
-    s = df_jobs.loc[df_jobs.index == job_index, "settings"].iloc[0]
+    s = df_jobs.loc[df_jobs["index"] == job_index, "settings"].values[0]
     return json.loads(s)
 
 def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file=None):
