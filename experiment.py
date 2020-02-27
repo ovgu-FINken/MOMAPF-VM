@@ -541,9 +541,10 @@ def read_experiment(db, name=None, verbose=False):
     
     if verbose:
         data = []
+        df_jobs = jobs(db)
         for exp in df_pop["experiment"].unique():
             ji = df_pop.loc[df_pop["experiment"] == exp, "job_index"].iloc[0]
-            settings = fetch_settings(jobs(db), job_index=ji)
+            settings = fetch_settings(df_jobs, job_index=ji)
             settings["mutp_0"] = settings["mutation_p"][0]
             settings["mutp_1"] = settings["mutation_p"][1]
             settings["mutp_2"] = settings["mutation_p"][2]
