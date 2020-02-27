@@ -46,8 +46,9 @@ if __name__=="__main__":
         for b in np.linspace(0.0, 1.0, num=5):
             s["cxpb"] = a
             s["mutpb"] = b
-            j["experiment"] = f"dubins_cx_{a:.1f}_{b:.1f}"
+            j["experiment"] = f"dubins_cx_{a:.2f}_{b:.2f}"
             add_jobs_to_db(s, **j)
+            time.sleep(0.5)
 
     s = settings.copy()
     s["model"] = Vehicle.STRAIGHT
@@ -57,5 +58,7 @@ if __name__=="__main__":
         for b in np.linspace(0.0, 1.0, num=5):
             s["cxpb"] = a
             s["mutpb"] = b
-            j["experiment"] = f"dubins_cx_{a:.1f}_{b:.1f}"
+            j["experiment"] = f"straight_cx_{a:.2f}_{b:.2f}"
             add_jobs_to_db(s, **j)
+            time.sleep(0.5)
+
