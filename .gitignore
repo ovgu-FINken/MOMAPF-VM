@@ -9,6 +9,7 @@ dubins
 etc
 include
 lib
+lib64
 python3
 pyvenv.cfg
 share

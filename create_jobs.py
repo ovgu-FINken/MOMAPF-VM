@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python
 import sqlalchemy
 import pandas as pd
 from path import *
