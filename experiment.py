@@ -22,6 +22,19 @@ from problem import *
 from obstacle_map import *
 
 
+def hypervolume2(ref, df, objective_1="robustness", objective_2="flowtime"):
+    x_last = ref[0]
+    hv = 0
+    for i, x in df.loc[df.non_dominated].sort_values(by=[objective_1], ascending=False).iterrows():
+        if x[objective_1] > ref[0]:
+            continue
+        if x[objective_2] > ref[1]:
+            continue
+        delta_f1 = x_last - x[objective_1]
+        delta_f2 = ref[1] - x[objective_2]
+        hv += delta_f1 * delta_f2
+        x_last = x[objective_1]
+    return hv
 
 
 class JobStatus(IntEnum):
@@ -84,23 +97,9 @@ class Experiment:
                 data.append(i_data)
         return pd.DataFrame(data)
     
-    def hypervolume2(self, df, objective_1="robustness", objective_2="flowtime"):
-        ref = self.settings["hv_ref"]
-        x_last = ref[0]
-        hv = 0
-        for i, x in df.loc[df.non_dominated].sort_values(by=[objective_1], ascending=False).iterrows():
-            if x[objective_1] > ref[0]:
-                continue
-            if x[objective_2] > ref[1]:
-                continue
-            delta_f1 = x_last - x[objective_1]
-            delta_f2 = ref[1] - x[objective_2]
-            hv += delta_f1 * delta_f2
-            x_last = x[objective_1]
-        return hv
     
     def _hv_pop(self, pop):
-        return self.hypervolume2(self.pop_to_df(pop))
+        return self.hypervolume2(self.settings["hv_ref"],self.pop_to_df(pop))
 
     def run(self, verbose=False):
         # for compatibility
@@ -173,19 +172,122 @@ class Experiment:
                 pop_feasible = pop_feasible + tools.selBest(pop_infeasible, settings['population_size'] - len(pop))
             # even needs to be done, if infeasible solutions exist, because crowding distance needs to be computed
             pop = toolbox.select(pop_feasible, settings['population_size'])
-            if g % 10 == 0:
+            if g % 10 == 0 or verbose:
                 record = stats.compile(pop)
                 record["hv"] = self._hv_pop(pop)
                 record["walltime"] = time.time() - start_time
                 logbook.record(gen=g, evals=evals, **record)
-            if verbose:
-                print(logbook.stream)
+                if verbose:
+                    print(logbook.stream)
 
         for ind in pop:
             ind.fitness.values = toolbox.evaluate(ind)
         return pop, logbook
     
+
+class ExperimentCoevolution:
+    def __init__(self, settings):
+        self.settings = settings
     
+    def seed(self, seed):
+        random.seed(seed)
+        np.random.seed(random.randint(0, 2**32-1))
+        
+    def setup(self):
+        obstacles = ObstacleMap(filename=self.settings['map_name'])
+        self.problem = DubinsMOMAPF(**self.settings, obstacles=obstacles)
+        
+        # deap setup
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0))
+            creator.create("Individual", list, fitness=creator.FitnessMin)
+        self.toolbox = base.Toolbox()
+        self.toolbox.register("attr_pos", np.random.uniform, self.settings['domain'][0], self.settings['domain'][1])
+        self.toolbox.register("attr_angle", np.random.uniform, 0, 2*np.pi)
+        self.toolbox.register("individual", tools.initCycle, creator.Individual,
+                              (self.toolbox.attr_pos, self.toolbox.attr_pos, self.toolbox.attr_angle),
+                              n=self.settings['n_agents'] * self.settings['n_waypoints']
+                             )
+        self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
+        #self.toolbox.register("evaluate", problem.evaluate_weighted_sum)
+        self.toolbox.register("evaluate", self.problem.evaluate)
+        self.toolbox.register("mate", self.problem.crossover)
+        self.toolbox.register("mutate", self.problem.all_mutations, p=self.settings['mutation_p'], sigma=self.settings['sigma'])
+        self.toolbox.register("select", tools.selNSGA2)
+        
+    def pop_to_df(self, population):
+        data = []
+        fronts = tools.sortNondominated(population, len(population))
+        for i, front in enumerate(fronts):
+            for j, ind in enumerate(front):
+                f = self.problem.evaluate(ind)
+                feasible = "feasible"
+                if f[0] > self.settings['feasiblity_threshold']:
+                    feasible = "infeasible"
+                i_data = {
+                    'front' : i,
+                    'non_dominated': i == 0,
+                    'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
+                    'individual': j,
+                    'value': json.dumps(ind),
+                    'robustness' : f[0],
+                    'flowtime' : f[1],
+                    'makespan' : f[2],
+                    'collision' : feasible,
+                }
+                data.append(i_data)
+        return pd.DataFrame(data)
+    
+    
+    def _hv_pop(self, pop):
+        return self.hypervolume2(self.settings["hv_ref"],self.pop_to_df(pop))
+
+    def run(self, verbose=False):
+        settings = self.settings
+        toolbox = self.toolbox
+        
+        stats = tools.Statistics(lambda ind: ind.fitness.values)
+        stats.register("median", np.median, axis=0)
+        # stats.register("std", np.std, axis=0)
+        stats.register("min", np.min, axis=0)
+        stats.register("max", np.max, axis=0)
+
+        logbook = tools.Logbook()
+        logbook.header = "gen", "evals", "min", "max", "median", "hv", "walltime"
+
+        pop = toolbox.population(n=1)
+        sub_populations = [toolbox.population(n=10) for _ in range(self.settings["num_agents"])]
+
+        for ind in pop:
+            ind.fitness.values = toolbox.evaluate(ind)
+        record = stats.compile(pop)
+        record["hv"] = self._hv_pop(pop)
+        record["walltime"] = 0
+        logbook.record(gen=0, evals=len(pop), **record)
+        if verbose:
+            print(logbook.stream)
+        for ind in pop:
+            ind.fitness.values = toolbox.evaluate(ind)
+            
+        start_time = time.time()
+        for g in range(1, settings['n_gens']):
+            for agent in range(sub_populations):
+            
+            
+
+            if g % 10 == 0 or verbose:
+                record = stats.compile(pop)
+                record["hv"] = self._hv_pop(pop)
+                record["walltime"] = time.time() - start_time
+                logbook.record(gen=g, evals=evals, **record)
+                if verbose:
+                    print(logbook.stream)
+
+        for ind in pop:
+            ind.fitness.values = toolbox.evaluate(ind)
+        return pop, logbook
+
 def get_commit():
     repo = git.Repo(search_parent_directories=True)
     return repo.head.object.hexsha
@@ -408,6 +510,26 @@ def jobs(db):
     return df_jobs
     
     
+def compute_combined_front2(df, o1="robustness", o2="flowtime", colname=None, groups=None, experiments=None):
+    if colname is None:
+        colname = "combined_front"
+    if groups is None:
+        groups = df["group"].unique()
+    if experiments is None:
+        experiments = df["experiment"].unique()
+    df.loc[df.group.isin(groups)&df.experiment.isin(experiments),colname] = False
+    last_o1 = np.inf
+    best_o2 = np.inf
+    for i, x in df.loc[df.non_dominated&df.group.isin(groups)&df.experiment.isin(experiments)].sort_values(by=[o1,o2], ascending=[True, True]).iterrows():
+        if last_o1 == x[o1] and x[o2] != best_o2:
+            continue
+        last_o1 = x[o1]
+        if x[o2] <= best_o2:
+            best_o2 = x[o2]
+            df.loc[i,colname] = True
+    return df
+
+
 def read_experiment(db, name=None, verbose=False):
     df_pop = pd.read_sql("populations", con=db)
     df_stats = pd.read_sql("logbooks", con=db)
@@ -427,6 +549,10 @@ def read_experiment(db, name=None, verbose=False):
             data.append(settings)
         df = pd.DataFrame(data)
         df_pop = df_pop.join(df.set_index("experiment"), on="experiment")
+        for group in df_pop["group"].unique():
+            compute_combined_front2(df_pop, colname="group_front", groups=[group])
+        for exp in df_pop["experiment"].unique():
+            compute_combined_front2(df_pop,colname="experiment_front", experiments=[exp])
         df_stats = df_stats.join(df.set_index("experiment"), on="experiment")
     return df_pop, df_stats
 
