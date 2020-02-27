@@ -36,7 +36,7 @@ if __name__=="__main__":
         "user" : "basti",
         "db" : engine,
     }
-    add_jobs_to_db(settings, **job_settings)
+    add_jobs_to_db(settings.copy(), **job_settings.copy())
     job_settings["delete"] = False
 
     s = settings.copy()
@@ -47,8 +47,8 @@ if __name__=="__main__":
             s["cxpb"] = a
             s["mutpb"] = b
             j["experiment"] = f"dubins_cx_{a:.2f}_{b:.2f}"
-            add_jobs_to_db(s, **j)
-            time.sleep(0.5)
+            add_jobs_to_db(s.copy(), **j.copy())
+            time.sleep(2)
 
     s = settings.copy()
     s["model"] = Vehicle.STRAIGHT
@@ -59,6 +59,6 @@ if __name__=="__main__":
             s["cxpb"] = a
             s["mutpb"] = b
             j["experiment"] = f"straight_cx_{a:.2f}_{b:.2f}"
-            add_jobs_to_db(s, **j)
-            time.sleep(0.5)
+            add_jobs_to_db(s.copy(), **j.copy())
+            time.sleep(2)
 
