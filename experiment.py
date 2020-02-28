@@ -53,7 +53,7 @@ class Experiment:
         
     def setup(self):
         obstacles = ObstacleMap(filename=self.settings['map_name'])
-        self.problem = DubinsMOMAPF(**self.settings, obstacles=obstacles)
+        self.problem = DubinsMOMAPF(obstacles=obstacles, **self.settings)
         
         # deap setup
         with warnings.catch_warnings():
@@ -195,7 +195,7 @@ class ExperimentCoevolution:
         
     def setup(self):
         obstacles = ObstacleMap(filename=self.settings['map_name'])
-        self.problem = DubinsMOMAPF(**self.settings, obstacles=obstacles)
+        self.problem = DubinsMOMAPF(obstacles=obstacles, **self.settings)
         
         # deap setup
         with warnings.catch_warnings():
@@ -344,11 +344,12 @@ class ExperimentRunner:
         #self.table_logs = sqlalchemy.Table('logs', self.metadata, autoload=True)
     
     def fetch_job(self):
-        select = sqlalchemy.sql.select([self.table_jobs]).where(self.table_jobs.c.status == JobStatus.TODO.value)
+        select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.status == JobStatus.TODO.value) | (self.table_jobs.c.status == JobStatus.FAILED.value))
         r = self.db.execute(select)
         row = r.fetchone()
         r.close()
         if row is None:
+            print("could not fetch job")
             return
         if row[self.table_jobs.c.commit] != get_commit():
             print("WARNING: commits do not match")
@@ -406,20 +407,19 @@ class ExperimentRunner:
     
     def execute_pool(self, workers=2):
         with Pool(processes=workers) as pool:
-            job = self.fetch_job()
             jobs = {}
             handles = {}
+            print("entering worker loop")
             try:
-                while job is not None or len(handles.keys()) > 0:
-                    if job is not None:
+                while True:
+                    job = self.fetch_job()
+                    if job is not None and len(handles.keys()) < workers:
                         self.set_job_status(job, status=JobStatus.IN_PROGRESS)
                         jobs[job['index']] = job
                         handles[job['index']] = pool.apply_async(execute_job, (job,))
                         print(f"starting job {job['index']}.")
-                    #handles.append(pool.apply_async(time.sleep, (3,)))
-                    #print(handles)
-                    while len(handles.keys()) >= workers:
-                        time.sleep(5)
+                        if len(handles.keys()) == workers:
+                            time.sleep(5)
                         completed = []
                         for k, v in handles.items():
                             if v.ready():
@@ -434,7 +434,6 @@ class ExperimentRunner:
                             del handles[k]
                             del jobs[k]
                     time.sleep(1)
-                    job = self.fetch_job()
             except:
                 for k, v in jobs.items():
                     self.set_job_status(v, status=JobStatus.FAILED)

@@ -117,6 +117,7 @@ class TBot:
         self.updater.bot.send_message(self.parse_error_chat_id, message)
             
     def scatterplot(self, update, context):
+        context.bot.send_message(chat_id=update.effective_chat.id, text="creating plot ... this can take a while.")
         df_pop, _ = read_experiment(engine, verbose=True)
         parser = argparse.ArgumentParser('Plot argument parsing')
         columns = list(df_pop.keys())
@@ -167,6 +168,8 @@ class TBot:
             context.bot.send_photo(chat_id=update.effective_chat.id, photo=buffer, text="Plot")
     
     def convergence_plot(self, update, context):
+        context.bot.send_message(chat_id=update.effective_chat.id, text="creating plot ... this can take a while.")
+        
         _, df_stats = read_experiment(engine, verbose=True)
         parser = argparse.ArgumentParser('Plot argument parsing')
         columns = list(df_stats.keys())
