@@ -53,8 +53,23 @@ class TBot:
 
         self.echo_handler = MessageHandler(Filters.text, self.echo)
         self.dispatcher.add_handler(self.echo_handler)
+        self.df_pop = None
+        self.df_stats = None
 
         
+    def update_data(self):
+        df_jobs = read_table("jobs", con=engine)
+        p = [df_pop]
+        s = [df_stats]
+        for experiment in df_jobs.experiment.unique():
+            if df_jobs.loc[df_jobs.experiment == experiment, "status"].eq(2).all():
+               if df_pop is None or experiment not in df_pop.experiment.unique():
+                  e = read_experiment(engine, experiment=experiment, verbose=True)
+                  p.append(e[0])
+                  s.append(e[1])
+        df_pop = pd.concat(p)
+        df_stats = pd.concat(s)
+
     def add_handler(self, name=None, function=None):
         self.handlers[name] = CommandHandler(name, function)
         self.dispatcher.add_handler(self.handlers[name])
@@ -107,7 +122,7 @@ class TBot:
         if msg is None and not self.done:
             msg = job_status_msg()
         else:
-            continue
+            return
         for chat in self.notify_chat_ids:
             self.updater.bot.send_message(chat, msg)
             
@@ -117,7 +132,9 @@ class TBot:
         self.updater.bot.send_message(self.parse_error_chat_id, message)
             
     def scatterplot(self, update, context):
-        df_pop, _ = read_experiment(engine, verbose=True)
+        context.bot.send_message(chat_id=update.effective_chat.id, text="creating plot ... this can take a while.")
+        self.update_data()
+        df_pop = self.df_pop
         parser = argparse.ArgumentParser('Plot argument parsing')
         columns = list(df_pop.keys())
         experiments = list(df_pop["experiment"].unique())
@@ -167,7 +184,11 @@ class TBot:
             context.bot.send_photo(chat_id=update.effective_chat.id, photo=buffer, text="Plot")
     
     def convergence_plot(self, update, context):
-        _, df_stats = read_experiment(engine, verbose=True)
+        context.bot.send_message(chat_id=update.effective_chat.id, text="creating plot ... this can take a while.")
+        
+        self.update_data()
+        df_pop = self.df_pop
+
         parser = argparse.ArgumentParser('Plot argument parsing')
         columns = list(df_stats.keys())
         experiments = list(df_stats["experiment"].unique())
