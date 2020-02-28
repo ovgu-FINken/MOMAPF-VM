@@ -532,18 +532,24 @@ def compute_combined_front2(df, o1="robustness", o2="flowtime", colname=None, gr
     return df
 
 
-def read_experiment(db, name=None, verbose=False):
-    df_pop = pd.read_sql("populations", con=db)
-    df_stats = pd.read_sql("logbooks", con=db)
-        
-    if name is not None:
-        df_pop, df_stats = df_pop.loc[df_pop['experiment']==name], df_stats.loc[df_stats['experiment']==name]
+def read_table(table, experiment=None, con=None):
+    if experiment is None:
+        return pd.read_sql(table, con=con)
+    metadata = sqlalchemy.MetaData(con)
+    t = sqlalchemy.Table(table, metadata, autoload=True)
+    sel = sqlalchemy.select([t]).where(t.c.experiment == experiment)
+    return pd.read_sql_query(sel, con=con)
+    
+
+def read_experiment(db, experiment=None, verbose=False):
+    df_pop = read_table("populations", con=db, experiment=experiment)
+    df_stats = read_table("logbooks", con=db, experiment=experiment)
     
     if verbose:
         data = []
-        df_jobs = jobs(db)
+        df_jobs = read_table("jobs", con=db, experiment=experiment)
         for exp in df_pop["experiment"].unique():
-            ji = df_pop.loc[df_pop["experiment"] == exp, "job_index"].iloc[0]
+            ji = df_pop.loc[df_pop["experiment"] == exp, "job_index"].values[0]
             settings = fetch_settings(df_jobs, job_index=ji)
             settings["mutp_0"] = settings["mutation_p"][0]
             settings["mutp_1"] = settings["mutation_p"][1]
@@ -552,11 +558,11 @@ def read_experiment(db, name=None, verbose=False):
             data.append(settings)
         df = pd.DataFrame(data)
         df_pop = df_pop.join(df.set_index("experiment"), on="experiment")
+        df_stats = df_stats.join(df.set_index("experiment"), on="experiment")
         for group in df_pop["group"].unique():
             compute_combined_front2(df_pop, colname="group_front", groups=[group])
         for exp in df_pop["experiment"].unique():
             compute_combined_front2(df_pop,colname="experiment_front", experiments=[exp])
-        df_stats = df_stats.join(df.set_index("experiment"), on="experiment")
     return df_pop, df_stats
 
 def fetch_settings(df_jobs, job_index=None):
