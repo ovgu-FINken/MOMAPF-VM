@@ -301,7 +301,8 @@ def logbook_to_df(logbook):
         data_i = {
             "generation": log['gen'],
             "evals": evals,
-            "hv": log["hv"]
+            "hv": log["hv"],
+            "walltime": log["walltime"],
         }
         for i, _ in enumerate(log['median']):
             data_i[f"f_{i}_median"] = log['median'][i]
@@ -343,21 +344,24 @@ class ExperimentRunner:
         #self.table_populations = sqlalchemy.Table('populations', self.metadata, autoload=True)
         #self.table_logs = sqlalchemy.Table('logs', self.metadata, autoload=True)
     
-    def fetch_job(self):
+    def fetch_job(self, verbose=False):
         select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.status == JobStatus.TODO.value) | (self.table_jobs.c.status == JobStatus.FAILED.value))
         r = self.db.execute(select)
         row = r.fetchone()
         r.close()
         if row is None:
-            print("could not fetch job")
+            if verbose:
+                print("could not fetch job")
             return
         if row[self.table_jobs.c.commit] != get_commit():
-            print("WARNING: commits do not match")
+            if verbose:
+                print("WARNING: commits do not match")
         job = {}
         for col in self.table_jobs.columns.keys():
             job[str(col)] = row[col]
         job['settings'] = json.loads(job['settings'])
-        print(f"fetched job: {job}")
+        if verbose:
+            print(f"fetched job: {job}")
         return job
 
     def set_job_status(self, job=None, status=None, time=0):
@@ -418,22 +422,22 @@ class ExperimentRunner:
                         jobs[job['index']] = job
                         handles[job['index']] = pool.apply_async(execute_job, (job,))
                         print(f"starting job {job['index']}.")
-                        if len(handles.keys()) == workers:
-                            time.sleep(5)
-                        completed = []
-                        for k, v in handles.items():
-                            if v.ready():
-                                completed.append(k)
-                                if v.successful():
-                                    self.save_results(v.get(), jobs[k])
-                                    print(f"job {k} successful")
-                                else:
-                                    self.set_job_status(jobs[k], status=JobStatus.FAILED)
-                                    print(f"job {k} failed")
-                        for k in completed:
-                            del handles[k]
-                            del jobs[k]
-                    time.sleep(1)
+                    if len(handles.keys()) == workers:
+                        time.sleep(5)
+                    completed = []
+                    for k, v in handles.items():
+                        if v.ready():
+                            completed.append(k)
+                            if v.successful():
+                                self.save_results(v.get(), jobs[k])
+                                print(f"job {k} successful")
+                            else:
+                                self.set_job_status(jobs[k], status=JobStatus.FAILED)
+                                print(f"job {k} failed")
+                    for k in completed:
+                        del handles[k]
+                        del jobs[k]
+                    time.sleep(0.5)
             except:
                 for k, v in jobs.items():
                     self.set_job_status(v, status=JobStatus.FAILED)
@@ -494,6 +498,10 @@ def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=
     } for i in range(runs)]
     df_jobs = pd.DataFrame(jobs)
     if delete:
+        sql = 'DROP TABLE IF EXISTS populations;'
+        db.execute(sql)
+        sql = 'DROP TABLE IF EXISTS logbooks;'
+        db.execute(sql)
         df_jobs.to_sql("jobs", con=db, if_exists="replace")
     else:
         old_jobs = pd.read_sql("jobs", con=db)
