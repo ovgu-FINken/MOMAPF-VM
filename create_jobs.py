@@ -11,6 +11,7 @@ if __name__=="__main__":
     settings = {
         'radius': 10,
         'step': 1,
+        'r_step': 0.2,
         'domain': (0, 200.0),
         'n_agents': 5,
         'n_waypoints': 3,
@@ -18,8 +19,8 @@ if __name__=="__main__":
         'population_size': 4*25,
         'cxpb': 0.75,
         'mutpb': 0.5,
-        'mutation_p': (0.5, 1.0, 1.0, 1.0),
-        'sigma' : 0.1,
+        'mutation_p': (0.5, 1.0, .0, 1.0),
+        'sigma' : 0.02,
         'model': Vehicle.DUBINS,
         'feasiblity_threshold': 95,
         'offset': (0, 0),
@@ -31,7 +32,7 @@ if __name__=="__main__":
     job_settings = {
         "delete" : False,
         "runs" : 31,
-        "experiment" : "dubins_baseline",
+        "experiment" : "baseline",
         "group" : "default",
         "user" : "basti",
         "db" : engine,
@@ -46,22 +47,22 @@ if __name__=="__main__":
     s["n_gens"] = 50
     s["population_size"] = 16
     add_jobs_to_db(s, **j)
-    add_jobs_to_db(settings.copy(), **job_settings.copy())
+    add_jobs_for_each_model(settings.copy(), **job_settings.copy())
 
     s = settings.copy()
     j = job_settings.copy()
-    j["group"] = "dubins_cx"
-    for a in np.linspace(0.0, 1.0, num=5):
-        for b in np.linspace(0.0, 1.0, num=5):
+    j["group"] = "cx"
+    for a in np.linspace(0.3, 1.0, num=5):
+        for b in np.linspace(0.3, 1.0, num=5):
             s["cxpb"] = a
             s["mutpb"] = b
-            j["experiment"] = f"dubins_cx_{a:.2f}_{b:.2f}"
-            add_jobs_to_db(s.copy(), **j.copy())
+            j["experiment"] = f"cx_{a:.2f}_{b:.2f}"
+            add_jobs_for_each_model(s.copy(), **j.copy())
             time.sleep(2)
 
     s = settings.copy()
     j = job_settings.copy()
-    j["group"] = "dubins_mut"
+    j["group"] = "mut"
     s["n_gens"] = 300
     for a in np.linspace(0.0, 1.0, num=5):
         for b in np.linspace(0.0, 1.0, num=5):
@@ -69,33 +70,6 @@ if __name__=="__main__":
                 if a == 0.0 and b == 0.0 and c == 0.0:
                     continue
                 s["mutation_p"] = (0.25, a, b, c)
-                j["experiment"] = f"dubins_mut_{a:.2f}_{b:.2f}_{c:.2f}"
-                add_jobs_to_db(s.copy(), **j.copy())
-                time.sleep(2)
-
-    s = settings.copy()
-    s["model"] = Vehicle.STRAIGHT
-    j = job_settings.copy()
-    j["group"] = "straight_cx"
-    for a in np.linspace(0.0, 1.0, num=5):
-        for b in np.linspace(0.0, 1.0, num=5):
-            s["cxpb"] = a
-            s["mutpb"] = b
-            j["experiment"] = f"straight_cx_{a:.2f}_{b:.2f}"
-            add_jobs_to_db(s.copy(), **j.copy())
-            time.sleep(2)
-
-    s = settings.copy()
-    j = job_settings.copy()
-    j["group"] = "straight_mut"
-    s["model"] = Vehicle.STRAIGHT
-    s["n_gens"] = 300
-    for a in np.linspace(0.0, 1.0, num=5):
-        for b in np.linspace(0.0, 1.0, num=5):
-            for c in np.linspace(0.0, 1.0, num=5):
-                if a == 0.0 and b == 0.0 and c == 0.0:
-                    continue
-                s["mutation_p"] = (0.25, a, b, c)
-                j["experiment"] = f"straight_mut_{a:.2f}_{b:.2f}_{c:.2f}"
-                add_jobs_to_db(s.copy(), **j.copy())
+                j["experiment"] = f"mut_{a:.2f}_{b:.2f}_{c:.2f}"
+                add_jobs_for_each_model(s.copy(), **j.copy())
                 time.sleep(2)

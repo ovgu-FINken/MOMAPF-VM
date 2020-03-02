@@ -109,8 +109,8 @@ class DubinsMOMAPF():
 
     def skip_mutation(self, vector, debug=False):
         agent_i = np.random.randint(self.n_agents)
-        i = np.random.randint(len(vector) / self.n_agents / 3) + 1
         wps = self.decode(vector)
+        i = np.random.randint(len(vector) / self.n_agents / 3) + 1
         before = wps[agent_i][i-1]
         after = wps[agent_i][i+1]
         path = self.waypoints_to_path([before, after])
@@ -119,9 +119,10 @@ class DubinsMOMAPF():
                 print("skip-mutation-skipped")
             return self.mutate(vector)
         ix_rand = np.random.randint(low=1, high=len(path)-2)
+        wp = path[ix_rand]
         if debug:
             print(f"adapding WP{i} of A{agent_i}")
-        wp = path[ix_rand]
+            print(wp)
         wps[agent_i][i] = wp
         vector[:] = self.encode(wps)
         return vector,
@@ -139,14 +140,22 @@ class DubinsMOMAPF():
         robustness, makespan, flowtime = self.agents_objectives(agents)
         return w_r * (100 - np.min([c_r,robustness])) + w_m * makespan + w_f * flowtime,
 
+    def _get_point(self, center, radius, orin):
+        x = center[0] + radius * np.cos(orin)
+        y = center[1] + radius * np.sin(orin)
+        return (x,y)
     
     def animation_update(self, i):
         x = []
         y = []
+        #plt.plot(tri[:,0], tri[:,1], 'g-')
         for path in self._anim_paths:
             if len(path) > i:
-                x.append(path[i][0])
-                y.append(path[i][1])
+                a = self._get_point(path[i], 10, path[i][2])
+                b = self._get_point(path[i], 10/2, path[i][2]+150./180.*np.pi)
+                c = self._get_point(path[i], 10/2, path[i][2]-150./180.*np.pi)
+                x = x + [a[0], b[0], c[0]]
+                y = y + [a[1], b[1], c[1]]
         self.sct.set_data(x, y)
         return self.sct,
 
@@ -162,7 +171,7 @@ class DubinsMOMAPF():
             self.obstacles.heatmap(plot_range=plot_range)
         self._anim_paths = None
         self.sct = None
-        self._anim_paths = [waypoints_to_path(agent, r=self.r, step=objectives[1]/100, model=self.model) for agent in agents]
+        self._anim_paths = [waypoints_to_path(agent, r=self.r, step=objectives[1]/100, model=self.model, FIX_ANGLES=True) for agent in agents]
         for path in self._anim_paths:
             plot_waypoints(path)
         self.sct, = plt.plot([], [], "ro")

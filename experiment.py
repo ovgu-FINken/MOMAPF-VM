@@ -477,8 +477,15 @@ class ExperimentRunner:
         df.to_sql("populations", self.db, if_exists="append")
         
         
+def add_jobs_for_each_model(settings, experiment=None, group=None, **job_settings):
+    assert(experiment is not None)
+    if group is None:
+        group = ""
+    for vm in Vehicle:
+        settings["model"] = vm
+        add_jobs_to_db(settings, experiment = f"{vm.name}_{experiment}", group = f"{vm.name}_{group}", **job_settings)
         
-def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=-1, user="default", runs=31, delete=False):
+def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=-1, user="default", runs=31, delete=False, seed_offset=1000):
     """Add new jobs (runs) to the experiment db with the given settings."""
     assert(experiment is not None)
     assert(db is not None)
@@ -487,7 +494,7 @@ def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=
     jobs = [{
         "experiment" : experiment,
         "run" : i,
-        "seed": i+1000,
+        "seed": i+seed_offset,
         "status": JobStatus.TODO.value,
         "commit": get_commit(),
         "user": user,
