@@ -561,6 +561,9 @@ def read_experiment(db, experiment=None, verbose=False):
             settings["mutp_0"] = settings["mutation_p"][0]
             settings["mutp_1"] = settings["mutation_p"][1]
             settings["mutp_2"] = settings["mutation_p"][2]
+            if len(settings["mutation_p"]) > 3:
+                settings["mutp_3"] = settings["mutation_p"][3]
+            
             settings["experiment"] = exp
             data.append(settings)
         df = pd.DataFrame(data)

@@ -17,8 +17,8 @@ if __name__=="__main__":
         'n_gens': 500,
         'population_size': 4*25,
         'cxpb': 0.75,
-        'mutpb': 1.0,
-        'mutation_p': (1.0, 1.0, 1.0),
+        'mutpb': 0.5,
+        'mutation_p': (0.5, 1.0, 1.0, 1.0),
         'sigma' : 0.1,
         'model': Vehicle.DUBINS,
         'feasiblity_threshold': 95,
@@ -68,7 +68,7 @@ if __name__=="__main__":
             for c in np.linspace(0.0, 1.0, num=5):
                 if a == 0.0 and b == 0.0 and c == 0.0:
                     continue
-                s["mutation_p"] = (a, b, c)
+                s["mutation_p"] = (0.25, a, b, c)
                 j["experiment"] = f"dubins_mut_{a:.2f}_{b:.2f}_{c:.2f}"
                 add_jobs_to_db(s.copy(), **j.copy())
                 time.sleep(2)
@@ -95,7 +95,7 @@ if __name__=="__main__":
             for c in np.linspace(0.0, 1.0, num=5):
                 if a == 0.0 and b == 0.0 and c == 0.0:
                     continue
-                s["mutation_p"] = (a, b, c)
+                s["mutation_p"] = (0.25, a, b, c)
                 j["experiment"] = f"straight_mut_{a:.2f}_{b:.2f}_{c:.2f}"
                 add_jobs_to_db(s.copy(), **j.copy())
                 time.sleep(2)

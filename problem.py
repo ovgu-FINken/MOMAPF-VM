@@ -73,6 +73,8 @@ class DubinsMOMAPF():
             return self.skip_mutation(vector)
         if x < p[0] + p[1]:
             return self.uniform_mutation(vector)
+        if len(p) > 3 and x >= p[0] + p[1] + p[2]:
+            self.mutate_full(vector, sigma=sigma)
         return self.mutate(vector, sigma=sigma)
 
     def mutate(self, vector, sigma=0.1):
@@ -81,6 +83,15 @@ class DubinsMOMAPF():
         vector[3*i+0] += np.random.normal(0.0, s)
         vector[3*i+1] += np.random.normal(0.0, s)
         vector[3*i+2] += np.random.normal(0.0, sigma*2*np.pi)
+        return vector,
+    
+    def mutate_full(self, vector, sigma=0.01):
+        s = sigma*(self.domain[1]-self.domain[0])
+        for i, _ in enumerate(vector):
+            if i%3 == 2:
+                vector[i] += np.random.normal(0.0, sigma*2*np.pi)
+            else:
+                vector[i] += np.random.normal(0.0, s)
         return vector,
     
     def uniform_mutation(self, vector, debug=False):
