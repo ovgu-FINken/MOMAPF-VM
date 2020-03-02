@@ -19,7 +19,7 @@ if __name__=="__main__":
         'cxpb': 0.75,
         'mutpb': 0.5,
         'mutation_p': (0.5, 1.0, 1.0, 1.0),
-        'sigma' : 0.1,
+        'sigma' : 0.01,
         'model': Vehicle.DUBINS,
         'feasiblity_threshold': 95,
         'offset': (0, 0),
