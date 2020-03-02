@@ -59,16 +59,17 @@ class TBot:
         
     def update_data(self):
         df_jobs = read_table("jobs", con=engine)
-        p = [df_pop]
-        s = [df_stats]
+        p = [self.df_pop]
+        s = [self.df_stats]
         for experiment in df_jobs.experiment.unique():
             if df_jobs.loc[df_jobs.experiment == experiment, "status"].eq(2).all():
-               if df_pop is None or experiment not in df_pop.experiment.unique():
-                  e = read_experiment(engine, experiment=experiment, verbose=True)
-                  p.append(e[0])
-                  s.append(e[1])
-        df_pop = pd.concat(p)
-        df_stats = pd.concat(s)
+                if self.df_pop is None or experiment not in self.df_pop.experiment.unique():
+                    print(f"adding {experiment}.")
+                    e = read_experiment(engine, experiment=experiment, verbose=True)
+                    p.append(e[0])
+                    s.append(e[1])
+        self.df_pop = pd.concat(p)
+        self.df_stats = pd.concat(s)
 
     def add_handler(self, name=None, function=None):
         self.handlers[name] = CommandHandler(name, function)
@@ -187,7 +188,7 @@ class TBot:
         context.bot.send_message(chat_id=update.effective_chat.id, text="creating plot ... this can take a while.")
         
         self.update_data()
-        df_pop = self.df_pop
+        df_stats = self.df_stats
 
         parser = argparse.ArgumentParser('Plot argument parsing')
         columns = list(df_stats.keys())
