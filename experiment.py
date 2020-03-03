@@ -434,6 +434,11 @@ class ExperimentRunner:
                             else:
                                 self.set_job_status(jobs[k], status=JobStatus.FAILED)
                                 print(f"job {k} failed")
+                                try:
+                                    print(v.get())
+                                except:
+                                    pass
+
                     for k in completed:
                         del handles[k]
                         del jobs[k]
@@ -604,7 +609,7 @@ def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file
     
 if __name__ == "__main__":
     mpl = multiprocessing.log_to_stderr()
-    mpl.setLevel(logging.INFO)
+    mpl.setLevel(logging.WARN)
     engine = sqlalchemy.create_engine(get_key(filename="db.key"))
     runner = ExperimentRunner(engine)
     runner.execute_pool(workers=70)
