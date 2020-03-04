@@ -80,6 +80,15 @@ if __name__=="__main__":
             j["experiment"] = f"cx_{a:.2f}_{b:.2f}"
             add_jobs_for_each_model(s.copy(), **j.copy())
 
+    s = settings.copy()
+    j = job_settings.copy()
+    j["group"] = "dif"
+    for a in range(3,11):
+        for b in range(1, 6):
+            s["n_agents"] = a
+            s["n_waypoints"] = b
+            j["experiment"] = f"dif_{a}_{b}"
+            add_jobs_for_each_model(s.copy(), **j.copy())
 
     """
     s = settings.copy()
