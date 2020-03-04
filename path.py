@@ -76,9 +76,9 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
                 for a in short_angle_range(phi, phi_goal, r_step=r_step):
                     path.append( (x, y, a) )
                     
-                if len(path) < 3:
-                    print("OH NO")
-                    print(f"{wp1}, {wp2}, {path}, {phi}")
+#                if len(path) < 3:
+#                    print("OH NO")
+#                    print(f"{wp1}, {wp2}, {path}, {phi}")
         elif model==Vehicle.REEDS_SHEPP:
             part = []
             sample = reeds_shepp.path_sample(wp1, wp2, r, step)

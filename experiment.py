@@ -421,7 +421,7 @@ class ExperimentRunner:
                         self.set_job_status(job, status=JobStatus.IN_PROGRESS)
                         jobs[job['index']] = job
                         handles[job['index']] = pool.apply_async(execute_job, (job,))
-                        print(f"starting job {job['index']}.")
+                        print(f"{time.strftime('%H:%M:%S')} -- start {job['index']}.")
                     if len(handles.keys()) == workers:
                         time.sleep(5)
                     completed = []
@@ -430,10 +430,10 @@ class ExperimentRunner:
                             completed.append(k)
                             if v.successful():
                                 self.save_results(v.get(), jobs[k])
-                                print(f"job {k} successful")
+                                print(f"{time.strftime('%H:%M:%S')} -- job {k} successful")
                             else:
                                 self.set_job_status(jobs[k], status=JobStatus.FAILED)
-                                print(f"job {k} failed")
+                                print(f"{time.strftime('%H:%M:%S')} -- job {k} failed")
                                 try:
                                     print(v.get())
                                 except:
@@ -488,7 +488,7 @@ def add_jobs_for_each_model(settings, experiment=None, group=None, **job_setting
         group = ""
     for vm in Vehicle:
         settings["model"] = vm
-        add_jobs_to_db(settings, experiment = f"{vm.name}_{experiment}", group = f"{vm.name}_{group}", **job_settings)
+        add_jobs_to_db(settings, experiment = f"{vm.name}_{experiment}", group = f"{group}", **job_settings)
         
 def add_jobs_to_db(settings, db=None, experiment=None, group=None, time=-1, pid=-1, user="default", runs=31, delete=False, seed_offset=1000):
     """Add new jobs (runs) to the experiment db with the given settings."""
@@ -612,5 +612,5 @@ if __name__ == "__main__":
     mpl.setLevel(logging.WARN)
     engine = sqlalchemy.create_engine(get_key(filename="db.key"))
     runner = ExperimentRunner(engine)
-    runner.execute_pool(workers=70)
+    runner.execute_pool(workers=75)
     
