@@ -15,12 +15,12 @@ if __name__=="__main__":
         'domain': (0, 200.0),
         'n_agents': 5,
         'n_waypoints': 3,
-        'n_gens': 400,
-        'population_size': 4*25,
-        'cxpb': 0.8,
+        'n_gens': 250,
+        'population_size': 64,
+        'cxpb': 0.4,
         'mutpb': 0.8,
         'mutation_p': (0.5, .0, .0, 1.0),
-        'sigma' : 0.02,
+        'sigma' : 0.01,
         'model': Vehicle.DUBINS,
         'feasiblity_threshold': 95,
         'offset': (0, 0),
@@ -56,7 +56,7 @@ if __name__=="__main__":
     j = job_settings.copy()
     j["group"] = "pop"
     for a in [4*i*i for i in range(2,6)]:
-        s["pop_size"] = a
+        s["population_size"] = a
         s["n_gens"] = int(250 * 100 / a)
         print(f"{a} : {s['n_gens']}")
         j["experiment"] = f"pop_{a:.2f}"
@@ -65,9 +65,9 @@ if __name__=="__main__":
     s = settings.copy()
     j = job_settings.copy()
     j["group"] = "sigma"
-    for a in np.logspace(-3, -1, num=5):
+    for a in np.logspace(-2.5, -1.5, num=5):
         s["sigma"] = a
-        j["experiment"] = f"sigma_{a:.2f}"
+        j["experiment"] = f"sigma_{a:.3f}"
         add_jobs_for_each_model(s.copy(), **j.copy())
 
     s = settings.copy()
