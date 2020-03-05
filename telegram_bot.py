@@ -140,6 +140,7 @@ class TBot:
         columns = list(df_pop.keys())
         experiments = list(df_pop["experiment"].unique())
         groups = list(df_pop["group"].unique())
+        models = list(df_pop["model"].unique())
         parser.add_argument("-x", default="robustness", choices=columns)
         parser.add_argument("-y", default="flowtime", choices=columns)
         parser.add_argument("-hue", default="experiment", choices=columns)
@@ -148,6 +149,7 @@ class TBot:
         parser.add_argument("-style", default=None, choices=columns)
         parser.add_argument("-experiment", choices=experiments)
         parser.add_argument("-group", choices=groups)
+        parser.add_argument("-model", choices=models, type=int)
         self.parse_error = False
         self.parse_error_chat_id = update.effective_chat.id
         parser.exit = self.parse_error_message
@@ -160,29 +162,30 @@ class TBot:
         
         context.bot.send_message(chat_id=update.effective_chat.id, text=str(plot_args))
         if plot_args.group is not None:
-            df_pop = df_pop.loc[df_pop["group"] == plot_args.group]
-        
+            groups = [plot_args.group]
         if plot_args.experiment is not None:
-            df_pop = df_pop.loc[df_pop["experiment"] == plot_args.experiment]
-        with plt.xkcd():
-            rp = sns.relplot(data=df_pop.loc[df_pop["non_dominated"]],
-                            x=plot_args.x,
-                            y=plot_args.y,
-                            hue=plot_args.hue,
-                            style=plot_args.style,
-                            row=plot_args.row,
-                            col=plot_args.col,
-                            alpha=.25
-                            )#, palette="jet")
-            
-            #plt.tight_layout()
-            buffer = io.BytesIO()
-            rp.fig.savefig(buffer, format='png')
+            experiments = [plot_args.experiment]
+        if plot_args.model is not None:
+            models = [plot_args.model]
+        
+        rp = sns.relplot(data=df_pop.loc[df_pop.non_dominated & df_pop.group.isin(groups) & df_pop.experiment.isin(experiments) & df_pop.model.isin(models)],
+                        x=plot_args.x,
+                        y=plot_args.y,
+                        hue=plot_args.hue,
+                        style=plot_args.style,
+                        row=plot_args.row,
+                        col=plot_args.col,
+                        alpha=.25
+                        )#, palette="jet")
+        
+        #plt.tight_layout()
+        buffer = io.BytesIO()
+        rp.fig.savefig(buffer, format='png')
 
-            buffer.seek(0)
-            print("plotting ...")
-            #plt.show()
-            context.bot.send_photo(chat_id=update.effective_chat.id, photo=buffer, text="Plot")
+        buffer.seek(0)
+        print("plotting ...")
+        #plt.show()
+        context.bot.send_photo(chat_id=update.effective_chat.id, photo=buffer, text="Plot")
     
     def convergence_plot(self, update, context):
         context.bot.send_message(chat_id=update.effective_chat.id, text="creating plot ... this can take a while.")
@@ -194,6 +197,7 @@ class TBot:
         columns = list(df_stats.keys())
         experiments = list(df_stats["experiment"].unique())
         groups = list(df_stats["group"].unique())
+        models = list(df_stats["model"].unique())
         parser.add_argument("-x", default="generation", choices=columns)
         parser.add_argument("-y", default="hv", choices=columns)
         parser.add_argument("-hue", default="experiment", choices=columns)
@@ -202,6 +206,7 @@ class TBot:
         parser.add_argument("-style", default=None, choices=columns)
         parser.add_argument("-experiment", choices=experiments)
         parser.add_argument("-group", choices=groups)
+        parser.add_argument("-model", choices=models, type=int)
         self.parse_error = False
         self.parse_error_chat_id = update.effective_chat.id
         parser.exit = self.parse_error_message
@@ -214,11 +219,15 @@ class TBot:
         
         context.bot.send_message(chat_id=update.effective_chat.id, text=str(plot_args))
         if plot_args.group is not None:
-            df_stats = df_stats.loc[df_stats["group"] == plot_args.group]
-        
+            groups = [plot_args.group]
         if plot_args.experiment is not None:
-            df_stats = df_stats.loc[df_stats["experiment"] == plot_args.experiment]
-        rp = sns.relplot(data=df_stats,
+            experiments = [plot_args.experiment]
+        if plot_args.model is not None:
+            models = [plot_args.model]
+        
+        
+
+        rp = sns.relplot(data=df_stats.loc[df_stats.group.isin(groups) & df_stats.experiment.isin(experiments) & df_stats.model.isin(models)],
                         x=plot_args.x,
                         y=plot_args.y,
                         hue=plot_args.hue,

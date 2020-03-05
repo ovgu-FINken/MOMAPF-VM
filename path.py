@@ -43,7 +43,7 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
             dist = np.linalg.norm(np.array(wp1[:-1]) - np.array(wp2[:-1]))
             x = wp1[0]
             y = wp1[1]
-            phi = np.unwrap(wp1[2])
+            phi = wp1[2] % (2 * np.pi)
             if dist > step:
                 dx = wp2[0] - wp1[0]
                 dy = wp2[1] - wp1[1]
@@ -72,13 +72,13 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
                 x = wp2[0]
                 y = wp2[1]
                 phi = phi_goal
-                phi_goal = np.unwrap(wp2[2])
+                phi_goal = wp2[2] % (2 * np.pi)
                 for a in short_angle_range(phi, phi_goal, r_step=r_step):
                     path.append( (x, y, a) )
                     
-                if len(path) < 3:
-                    print("OH NO")
-                    print(f"{wp1}, {wp2}, {path}, {phi}")
+#                if len(path) < 3:
+#                    print("OH NO")
+#                    print(f"{wp1}, {wp2}, {path}, {phi}")
         elif model==Vehicle.REEDS_SHEPP:
             part = []
             sample = reeds_shepp.path_sample(wp1, wp2, r, step)
