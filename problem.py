@@ -19,11 +19,32 @@ def circle_waypoint(domain=(0.0, 100.0), r=75, angle=0):
     y = np.cos(angle) * r + center
     return (x, y, angle)
 
+def line_configuration(n_agents=1, domain=(0.0, 200.0)):
+    dh= (domain[1] - domain[0]) / (n_agents + 2)
+    c = (domain[1] - domain[0]) / 2
+    start = []
+    end = []
+    
+    if n_agents % 2 == 0:
+        oy = dh / 2
+    else:
+        oy = 0
+    ox = 60
+    sx = -1
+    sy = -1
+    for i in range(n_agents):
+        start.append( (c + ox * sx , c - oy * sy, 0 ) )
+        end.append( (c - ox * sx, c + oy * sy, np.pi ) )
+        if (i + n_agents) % 2 == 1:
+            oy += dh
+            sx = -1 * sx
+        sy = -1 * sy
+    return start, end
+
 class DubinsMOMAPF():
 
     def __init__(self, n_agents=4, domain=(0.0, 100.00), radius=5.0, step=0.1, model=Vehicle.DUBINS, obstacles=None, metric=None, **unused_settings):
-        self.start = [circle_waypoint(domain=domain, r=60, angle=2*np.pi*(0.1 + 0.8 * i/n_agents)) for i in range(n_agents)]
-        self.goals = [circle_waypoint(domain=domain, r=80, angle=-2*np.pi*(0.1 + 0.8 * i/n_agents)) for i in range(n_agents)]
+        self.start, self.goals = line_configuration(n_agents=n_agents, domain=domain)
         self.r = radius
         self.step = step
         self.n_agents = n_agents
