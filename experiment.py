@@ -612,5 +612,5 @@ if __name__ == "__main__":
     mpl.setLevel(logging.WARN)
     engine = sqlalchemy.create_engine(get_key(filename="db.key"))
     runner = ExperimentRunner(engine)
-    runner.execute_pool(workers=75)
+    runner.execute_pool(workers=65)
     

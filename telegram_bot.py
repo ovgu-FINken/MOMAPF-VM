@@ -14,7 +14,7 @@ import logging
 import argparse
 
 engine = sqlalchemy.create_engine(get_key(filename="db.key"))
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
@@ -186,6 +186,7 @@ class TBot:
         print("plotting ...")
         #plt.show()
         context.bot.send_photo(chat_id=update.effective_chat.id, photo=buffer, text="Plot")
+        plt.close()
     
     def convergence_plot(self, update, context):
         context.bot.send_message(chat_id=update.effective_chat.id, text="creating plot ... this can take a while.")
@@ -248,6 +249,7 @@ class TBot:
         print("plotting ...")
         #plt.show()
         context.bot.send_photo(chat_id=update.effective_chat.id, photo=buffer, text="Convergence Plot")
+        plt.close()
 
 if __name__ == "__main__":
     print(job_status_msg())

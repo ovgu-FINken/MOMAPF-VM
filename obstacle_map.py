@@ -66,11 +66,11 @@ if __name__ == "__main__":
     values[-1,:] = -5
     values[:,0] = -5
     values[:,-1] = -5
-    values[70:-70,95:-95] = -5
-    values[95:105,-50:-1] = -5
-    values[95:105,30:100] = -5
+    values[95:-95,50:-50] = -5
+    #values[95:105,-50:-1] = -5
+    #values[95:105,30:100] = -5
 
     obstacles = ObstacleMap(value=values)
     obstacles.precompute_distances()
 
-    obstacles.save("cross.obstacles")
+    obstacles.save("bar.obstacles")
