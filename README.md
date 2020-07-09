@@ -1,5 +1,9 @@
 # Multi-Objective Multi-Agent Path Finding with Vehicle Models -- MOMPAF-VM
 
+## Reference
+
+This Repository contains the research conducted for the paper Sebastian Mai, Sanaz Mostaghim "Planning Agents in Swarm Intelligence" accepted at the ANTS 2020.
+
 ## Files
 
 The main file is the jupyter notebook. It includes instructions on how the project is working and gives an overview on the code base.
