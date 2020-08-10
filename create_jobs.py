@@ -85,4 +85,5 @@ if __name__=="__main__":
                 s["n_waypoints"] = b
                 s["map_name"] = env
                 j["experiment"] = f"{env}_{a}_{b}"
+                j["group"] = env
                 add_jobs_for_each_model(s.copy(), **j.copy())
