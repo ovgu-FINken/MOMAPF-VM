@@ -15,8 +15,8 @@ if __name__=="__main__":
         'domain': (0, 200.0),
         'n_agents': 5,
         'n_waypoints': 3,
-        'n_gens': 400,
-        'population_size': 64,
+        'n_gens': 1000,
+        'population_size': 100,
         'cxpb': 0.4,
         'mutpb': 0.8,
         'mutation_p': (0.5, .0, .0, 1.0),
@@ -70,13 +70,17 @@ if __name__=="__main__":
         j["experiment"] = f"sigma_{a:.3f}"
         add_jobs_for_each_model(s.copy(), **j.copy())
     """
-
+    
+    labyrinth = [20, 40, 60, 80, 100, 120, 140, 160, 180]
+    environments = [f"labyrinth_{i}.obstacles.npy" for i in labyrinth]
+    environments += [f"labyrinth_2_{i}.obstacles.npy" for i in labyrinth]
+    
     s = settings.copy()
     j = job_settings.copy()
     j["group"] = "all"
     for a in [2,3,4,5,7,9,11]:
-        for b in range(1, 6):
-            for env in ["no.obstacles.npy", "cross.obstacles.npy", "bar.obstacles.npy"]:
+        for b in range(2, 6):
+            for env in ["no.obstacles.npy", "cross.obstacles.npy", "bar.obstacles.npy"]+environemnts:
                 s["n_agents"] = a
                 s["n_waypoints"] = b
                 s["map_name"] = env

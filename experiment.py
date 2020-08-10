@@ -592,14 +592,21 @@ def fetch_settings(df_jobs, job_index=None):
     s = df_jobs.loc[df_jobs["index"] == job_index, "settings"].values[0]
     return json.loads(s)
 
-def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file=None):
+def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file=None, show=True):
     """creates a plot from the individual in resulting dataframe"""
     settings = fetch_settings(df_jobs, job_index=row['job_index'])
     ex = Experiment(settings)
     ex.setup()
     ind = json.loads(row['value'])
     if plot:
-        ex.problem.solution_plot(ind)
+        ex.problem.solution_plot(ind, show=show)
+        ax = plt.gca()
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlabel(None)
+        ax.set_ylabel(None)
+        plt.title(f"$f_R^*={row['robustness']:.1f}$, $f_L={row['flowtime']:.1f}$")
+        plt.tight_layout()
     if animation:
         ex.problem.solution_animation(ind, filename=animation_file)
     return settings, ex

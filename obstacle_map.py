@@ -52,8 +52,13 @@ class ObstacleMap:
                 item = {"x" : i, "y": j, "value": self.get_value(i, j)}
                 data.append(item)
         obstacle_df = pd.DataFrame(data)
-        heat = sns.heatmap(obstacle_df.pivot(index="y", columns="x", values="value"), cmap=self.cmap, center=0)
+        heat = sns.heatmap(obstacle_df.pivot(index="y", columns="x", values="value"), cmap=self.cmap, center=0, cbar=False)
         heat.invert_yaxis()
+        
+        heat.set_xticks([])
+        heat.set_yticks([])
+        heat.set_xlabel(None)
+        heat.set_ylabel(None)
         return heat
     
     def save(self, filename):
@@ -61,16 +66,17 @@ class ObstacleMap:
         
 
 if __name__ == "__main__":
-    values = np.ones((200, 200))
-    values[0,:] = -5
-    values[-1,:] = -5
-    values[:,0] = -5
-    values[:,-1] = -5
-    values[95:-95,50:-50] = -5
-    #values[95:105,-50:-1] = -5
-    #values[95:105,30:100] = -5
+    for bar_length in [40]:
+        values = np.ones((200, 200))
+        values[0,:] = -5
+        values[-1,:] = -5
+        values[:,0] = -5
+        values[:,-1] = -5
+        values[60:70,:bar_length] = -5
+        values[95:105,-bar_length:] = -5
+        values[130:140,:bar_length] = -5
 
-    obstacles = ObstacleMap(value=values)
-    obstacles.precompute_distances()
+        obstacles = ObstacleMap(value=values)
+        obstacles.precompute_distances()
 
-    obstacles.save("bar.obstacles")
+        obstacles.save(f"labyrinth_{bar_length}.obstacles")

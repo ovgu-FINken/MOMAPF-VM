@@ -182,7 +182,7 @@ class DubinsMOMAPF():
 
     def agents_animation(self, agents, filename=None, plot_range=None):
         plt.ioff()
-        fig = plt.figure()
+        fig = plt.figure(figsize=(5,5))
         objectives = self.agents_objectives(agents)
         for agent in agents:
             plot_waypoints(agent, alpha=0.5)
@@ -196,7 +196,7 @@ class DubinsMOMAPF():
         for path in self._anim_paths:
             plot_waypoints(path)
         self.sct, = plt.plot([], [], "ro")
-        plt.title(f"robustness: {objectives[0]}\nmakespan: {objectives[1]}\nflowtime: {objectives[2]}")
+        #plt.title(f"robustness: {objectives[0]}\nmakespan: {objectives[1]}\nflowtime: {objectives[2]}")
         plt.tight_layout()
         longest = max([len(p) for p in self._anim_paths])
         anim = animation.FuncAnimation(fig, self.animation_update, frames=longest,
@@ -211,16 +211,18 @@ class DubinsMOMAPF():
     def solution_animation(self, ind, **kwargs):
         self.agents_animation(self.decode(ind), **kwargs)
     
-    def solution_plot(self, ind, plot_range=None):
+    def solution_plot(self, ind, plot_range=None, legend=False, show=True):
         wps = self.decode(ind)
         df_wp = wps_to_df(wps)
         df_paths = wps_to_df([waypoints_to_path(wp, r=self.r, step=self.step, model=self.model) for wp in wps])
         palette = sns.color_palette("muted", n_colors=self.n_agents)
-        plt.figure()
+        if show:
+            plt.figure()
         if self.obstacles is not None:
             if plot_range is None:
                 plot_range = np.arange(*self.domain)
             self.obstacles.heatmap(plot_range=plot_range)
-        sns.scatterplot(data=df_wp, x="x", y="y", hue="agent", marker="x", palette=palette)
+        sns.scatterplot(data=df_wp, x="x", y="y", hue="agent", marker="x", palette=palette, legend=legend)
         sns.lineplot(data=df_paths, x="x", y="y", hue="agent", palette=palette, sort=False, legend=False)
-        plt.show()
+        if show:
+            plt.show()
