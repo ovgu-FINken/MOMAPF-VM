@@ -14,6 +14,7 @@ import time
 from multiprocessing import Pool, TimeoutError
 import multiprocessing
 import logging
+import itertools
 
 from enum import IntEnum
 from deap import base, creator, tools, algorithms
@@ -58,20 +59,31 @@ class Experiment:
         # deap setup
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0))
+            if self.settings["use_novelty"]:
+                creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0, -1.0))
+            else:
+                creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0))
+                
             creator.create("Individual", list, fitness=creator.FitnessMin)
         self.toolbox = base.Toolbox()
         self.toolbox.register("attr_pos", np.random.uniform, self.settings['domain'][0], self.settings['domain'][1])
         self.toolbox.register("attr_angle", np.random.uniform, 0, 2*np.pi)
-        self.toolbox.register("individual", tools.initCycle, creator.Individual,
-                              (self.toolbox.attr_pos, self.toolbox.attr_pos, self.toolbox.attr_angle),
-                              n=self.settings['n_agents'] * self.settings['n_waypoints']
-                             )
+        if self.settings['velocity_control']:
+            self.toolbox.register("attr_velocity", np.random.uniform, 0.5, 1.0)
+            self.toolbox.register("individual", tools.initCycle, creator.Individual,
+                                  (self.toolbox.attr_pos, self.toolbox.attr_pos, self.toolbox.attr_angle, self.toolbox.attr_velocity),
+                                  n=self.settings['n_agents'] * self.settings['n_waypoints']
+                                 )
+        else:
+            self.toolbox.register("individual", tools.initCycle, creator.Individual,
+                                  (self.toolbox.attr_pos, self.toolbox.attr_pos, self.toolbox.attr_angle),
+                                  n=self.settings['n_agents'] * self.settings['n_waypoints']
+                                 )
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
         #self.toolbox.register("evaluate", problem.evaluate_weighted_sum)
-        self.toolbox.register("evaluate", self.problem.evaluate)
+        self.toolbox.register("evaluate", self.problem.evaluate, k=self.settings["novelty_k"])
         self.toolbox.register("mate", self.problem.crossover)
-        self.toolbox.register("mutate", self.problem.all_mutations, p=self.settings['mutation_p'], sigma=self.settings['sigma'])
+        self.toolbox.register("mutate", self.problem.all_mutations, p=self.settings['mutation_p'], sigma=self.settings['sigma'], sigma_full=self.settings['sigma_full'])
         self.toolbox.register("select", tools.selNSGA2)
         
     def pop_to_df(self, population):
@@ -79,7 +91,7 @@ class Experiment:
         fronts = tools.sortNondominated(population, len(population))
         for i, front in enumerate(fronts):
             for j, ind in enumerate(front):
-                f = self.problem.evaluate(ind)
+                f = self.problem.evaluate(ind, pop=population)
                 feasible = "feasible"
                 if f[0] > self.settings['feasiblity_threshold']:
                     feasible = "infeasible"
@@ -99,7 +111,7 @@ class Experiment:
     
     
     def _hv_pop(self, pop):
-        return hypervolume2(self.settings["hv_ref"],self.pop_to_df(pop))
+        return hypervolume2(self.settings["hv_ref"], self.pop_to_df(pop))
 
     def run(self, verbose=False):
         # for compatibility
@@ -119,7 +131,7 @@ class Experiment:
         pop = toolbox.select(pop, settings['population_size']) # for computing crowding distance
 
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
         record = stats.compile(pop)
         record["hv"] = self._hv_pop(pop)
         record["walltime"] = 0
@@ -127,7 +139,7 @@ class Experiment:
         if verbose:
             print(logbook.stream)
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
             
         start_time = time.time()
         for g in range(1, settings['n_gens']):
@@ -141,26 +153,40 @@ class Experiment:
             # Apply crossover and mutation on the offspring
             for ind1, ind2 in zip(offspring[::2], offspring[1::2]):
                 change1, change2 = False, False
-                if np.random.rand() <= settings['cxpb']:
-                    toolbox.mate(ind1, ind2)
+                if np.random.rand() < settings['cxpb']:
+                    ind1, ind2 = toolbox.mate(ind1, ind2)
                     change1, change2 = True, True
                 
-                if not change1 or np.random.rand() <= settings['mutpb']:
+                if not change1 or np.random.rand() < settings['mutpb']:
                     change1 = True
                     toolbox.mutate(ind1)
-                if not change2 or np.random.rand() <= settings['mutpb']:
+                if not change2 or np.random.rand() < settings['mutpb']:
                     change2 = True
                     toolbox.mutate(ind2)
                 del ind1.fitness.values, ind2.fitness.values
                 assert(change1)
                 assert(change2)
-
-            pop = pop + offspring
+            
+            
+            #add new offspring to pop, that are not duplicates
+            for ind in offspring:
+                duplicate = False
+                for x in pop:
+                    if x == ind:
+                        duplicate = True
+                        break
+                if not duplicate:
+                    pop.append(ind)
+            # done
+            
+            
             evals = 0
             for ind in pop:
                 if not ind.fitness.valid:
-                    ind.fitness.values = toolbox.evaluate(ind)
-                    evals += 1
+                    ind.fitness.values = toolbox.evaluate(ind, pop=pop)
+                else:
+                    ind.fitness.values = ind.fitness.values[0], ind.fitness.values[1], toolbox.evaluate(ind, pop=pop, novelty_only=True)[2]
+                evals += 1
             pop_feasible = []
             pop_infeasible = []
             for ind in pop:
@@ -181,7 +207,7 @@ class Experiment:
                     print(logbook.stream)
 
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind,pop=pop)
         return pop, logbook
     
 
@@ -221,7 +247,12 @@ class ExperimentCoevolution:
         fronts = tools.sortNondominated(population, len(population))
         for i, front in enumerate(fronts):
             for j, ind in enumerate(front):
-                f = self.problem.evaluate(ind)
+                f = None
+                if ind.fitness is None:
+                    f = self.problem.evaluate(ind)
+                else:
+                    f = ind.fitness.values
+                
                 feasible = "feasible"
                 if f[0] > self.settings['feasiblity_threshold']:
                     feasible = "infeasible"
@@ -260,7 +291,7 @@ class ExperimentCoevolution:
         sub_populations = [toolbox.population(n=10) for _ in range(self.settings["num_agents"])]
 
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
         record = stats.compile(pop)
         record["hv"] = self._hv_pop(pop)
         record["walltime"] = 0
@@ -268,7 +299,7 @@ class ExperimentCoevolution:
         if verbose:
             print(logbook.stream)
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
             
         start_time = time.time()
         for g in range(1, settings['n_gens']):
@@ -286,7 +317,7 @@ class ExperimentCoevolution:
                     print(logbook.stream)
 
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
         return pop, logbook
 
 def get_commit():
@@ -619,5 +650,5 @@ if __name__ == "__main__":
     mpl.setLevel(logging.WARN)
     engine = sqlalchemy.create_engine(get_key(filename="db.key"))
     runner = ExperimentRunner(engine)
-    runner.execute_pool(workers=65)
+    runner.execute_pool(workers=3)
     

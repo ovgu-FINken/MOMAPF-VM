@@ -16,22 +16,29 @@ class ObstacleMap:
             self._map = np.zeros( size )
     
     
-    def precompute_distances(self, r=20):
+    def precompute_distances(self, r=40):
         print("start precomputing values in distance array")
-        current_i = 0
         for i in range(self.size[0]):
             radius = r
             for j in range(self.size[1]):
                 if self._map[i, j] <= 0.0:
-                    continue
-                self._map[i, j] = radius
-                for x in range(max(0, i - radius), min(i+radius, self.size[0])):
-                    for y in range(max(0, j - radius), min(j+radius, self.size[1])):
-                        if self._map[x, y] <= 0:
-                            d = np.sqrt((x-i)**2 + (y-j)**2)
-                            if d < self._map[i, j]:
-                                self._map[i, j] = d
-                radius = min(int(self._map[i, j]) + 3, r)
+                    obstacle = 0
+                    n = 0
+                    for x in range(max(0, i - radius), min(i+radius, self.size[0])):
+                        for y in range(max(0, j - radius), min(j+radius, self.size[1])):
+                            if np.linalg.norm([x-i, y-j]) < radius / 2:
+                                n += 1
+                                if self._map[x, y] < 0:
+                                    obstacle += 1
+                    self._map[i, j] = -25 * (obstacle / n)
+                else:
+                    self._map[i, j] = radius
+                    for x in range(max(0, i - radius), min(i+radius, self.size[0])):
+                        for y in range(max(0, j - radius), min(j+radius, self.size[1])):
+                            if self._map[x, y] < 0.0:
+                                d = np.sqrt((x-i)**2 + (y-j)**2)
+                                if d < self._map[i, j]:
+                                    self._map[i, j] = d
         print("finished.")
                     
         
@@ -40,7 +47,7 @@ class ObstacleMap:
             return self._map[int(x+self.offset[0]), int(y+self.offset[1])]
         except IndexError:
             pass
-        return -5
+        return -5000
     
     
     def heatmap(self, plot_range=None):
@@ -64,19 +71,60 @@ class ObstacleMap:
     def save(self, filename):
         np.save(filename, self._map)
         
-
-if __name__ == "__main__":
-    for bar_length in [40]:
-        values = np.ones((200, 200))
-        values[0,:] = -5
-        values[-1,:] = -5
-        values[:,0] = -5
-        values[:,-1] = -5
-        values[60:70,:bar_length] = -5
+def save_labyrinth(bar_length, difficulty="hard"):
+    print(f"creating: obstacles/labyrinth_{difficulty}_{bar_length}")
+    values = np.ones((200, 200))
+    values[0,:] = -5
+    values[-1,:] = -5
+    values[:,0] = -5
+    values[:,-1] = -5
+    values[60:70,:bar_length] = -5
+    if difficulty == "hard":
         values[95:105,-bar_length:] = -5
         values[130:140,:bar_length] = -5
+    elif difficulty == "easy":
+        values[130:140,-bar_length:] = -5
+    else:
+        print("no preset for given difficulty")
+        return
 
-        obstacles = ObstacleMap(value=values)
-        obstacles.precompute_distances()
+    obstacles = ObstacleMap(value=values)
+    obstacles.precompute_distances()
+    obstacles.save(f"obstacles/labyrinth_{difficulty}_{bar_length}")
+    print("done.")
+    
+def save_double_gap(bar_length, difficulty="easy", gaps=2):
+    print(f"creating: obstacles/gaps_{gaps}_{difficulty}_{bar_length}")
+    values = np.ones((200, 200))
+    values[0,:] = -5
+    values[-1,:] = -5
+    values[:,0] = -5
+    values[:,-1] = -5
+    
+    if difficulty == "hard" or difficulty == "medium":
+        values[60:70,:bar_length] = -5
+    
+    if difficulty == "hard":
+        values[130:140,-bar_length:] = -5
 
-        obstacles.save(f"labyrinth_{bar_length}.obstacles")
+        
+    length = int(200 / (2 * gaps -1))
+    y = length
+    while y + length < 200:
+        values[95:105,y:y+length] = -5
+        y += 2*length
+
+    obstacles = ObstacleMap(value=values)
+    obstacles.precompute_distances()
+    obstacles.save(f"obstacles/gaps_{gaps}_{difficulty}_{bar_length}")
+    print("done.")
+    
+
+if __name__ == "__main__":
+    for gaps in range(2, 6):
+        for difficulty in ["easy", "medium", "hard"]:
+            if difficulty == "easy":
+                save_double_gap(60, gaps=gaps, difficulty=difficulty)
+                continue
+            for bar_length in [60, 80, 90, 95,100,105, 110, 120, 140]:
+                save_double_gap(bar_length, gaps=gaps, difficulty=difficulty)
