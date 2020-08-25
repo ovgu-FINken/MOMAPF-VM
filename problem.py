@@ -115,10 +115,11 @@ class DubinsMOMAPF():
         v = np.array(vector)
         novelty_minimisation = 0.0
         if pop is not None:
+            k = np.min([k, len(pop)])
             for ind in pop:
                 d = np.linalg.norm(v - np.array(ind))
                 nearest.append(d)
-            knn = sorted(nearest)[:k+1]
+            knn = sorted(nearest)[:k]
             s = np.sum(knn)
             if s == 0.0:
                 novelty_minimisation = 1e20
@@ -145,7 +146,9 @@ class DubinsMOMAPF():
             print(f"old: {wps[agent][wp]}")
         s = sigma*(self.domain[1]-self.domain[0])
         wps[agent][wp][0] += np.random.normal(0.0, s)
+        wps[agent][wp][0] = np.clip(wps[agent][wp][0], self.domain[0], self.domain[1])
         wps[agent][wp][1] += np.random.normal(0.0, s)
+        wps[agent][wp][1] = np.clip(wps[agent][wp][1], self.domain[0], self.domain[1])
         wps[agent][wp][2] += np.random.normal(0.0, sigma*2*np.pi)
         if len(wps[agent][wp])>3:
             wps[agent][wp][3] += np.random.normal(0.0, sigma)
@@ -165,7 +168,9 @@ class DubinsMOMAPF():
         for agent in range(len(wps)):
             for wp in range(1,len(wps[agent])-1):
                 wps[agent][wp][0] += np.random.normal(0.0, s)
+                wps[agent][wp][0] = np.clip(wps[agent][wp][0], self.domain[0], self.domain[1])
                 wps[agent][wp][1] += np.random.normal(0.0, s)
+                wps[agent][wp][1] = np.clip(wps[agent][wp][1], self.domain[0], self.domain[1])
                 wps[agent][wp][2] += np.random.normal(0.0, sigma*2*np.pi)
                 if len(wps[agent][wp])>3:
                     wps[agent][wp][3] += np.random.normal(0.0, sigma)

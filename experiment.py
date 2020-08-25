@@ -125,23 +125,41 @@ class Experiment:
         stats.register("max", np.max, axis=0)
 
         logbook = tools.Logbook()
-        logbook.header = "gen", "evals", "min", "max", "median", "hv", "walltime"
+        logbook.header = "gen", "evals", "min", "max", "median", "hv", "walltime", "len(archive)"
 
         pop = toolbox.population(n=settings['population_size'])
         pop = toolbox.select(pop, settings['population_size']) # for computing crowding distance
+        archive = []
 
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
+            ind.fitness.values = toolbox.evaluate(ind)
+            
+            #archive insertion
+            dominated = False
+            for a in archive:
+                if a.fitness.values[0] > ind.fitness.values[0] and a.fitness.values[1] >= ind.fitness.values[1] or \
+                   a.fitness.values[0] >= ind.fitness.values[0] and a.fitness.values[1] > ind.fitness.values[1]:
+                    archive.remove(a)
+
+                elif a.fitness.values[0] < ind.fitness.values[0] and a.fitness.values[1] <= ind.fitness.values[1] or \
+                     a.fitness.values[0] <= ind.fitness.values[0] and a.fitness.values[1] < ind.fitness.values[1]:
+                    dominated = True
+                    break
+            if not dominated:
+                archive += [ind]
+
+        for ind in pop:
+            ind.fitness.values = toolbox.evaluate(ind, pop=archive)
+            
         record = stats.compile(pop)
         record["hv"] = self._hv_pop(pop)
         record["walltime"] = 0
+        record["len(archive)"] = len(archive)
         logbook.record(gen=0, evals=len(pop), **record)
         if verbose:
             print(logbook.stream)
-        for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
-            
         start_time = time.time()
+        
         for g in range(1, settings['n_gens']):
             # Select and clone the next generation individuals
             #offspring = toolbox.clone(pop)
@@ -177,13 +195,28 @@ class Experiment:
                         break
                 if not duplicate:
                     pop.append(ind)
-            # done
             
             
             evals = 0
             for ind in pop:
                 if not ind.fitness.valid:
-                    ind.fitness.values = toolbox.evaluate(ind, pop=pop)
+                    ind.fitness.values = toolbox.evaluate(ind, pop=archive)
+                    #archive insertion
+                    dominated = False
+                    for a in archive:
+                        if a.fitness.values[0] > ind.fitness.values[0] and a.fitness.values[1] >= ind.fitness.values[1] or \
+                           a.fitness.values[0] >= ind.fitness.values[0] and a.fitness.values[1] > ind.fitness.values[1]:
+                            archive.remove(a)
+                            
+                        elif a.fitness.values[0] < ind.fitness.values[0] and a.fitness.values[1] <= ind.fitness.values[1] or \
+                             a.fitness.values[0] <= ind.fitness.values[0] and a.fitness.values[1] < ind.fitness.values[1]:
+                            dominated = True
+                            break
+                    if not dominated:
+                        archive += [ind]
+                        
+                            
+                            
                 else:
                     ind.fitness.values = ind.fitness.values[0], ind.fitness.values[1], toolbox.evaluate(ind, pop=pop, novelty_only=True)[2]
                 evals += 1
@@ -202,13 +235,14 @@ class Experiment:
                 record = stats.compile(pop)
                 record["hv"] = self._hv_pop(pop)
                 record["walltime"] = time.time() - start_time
+                record["len(archive)"] = len(archive)
                 logbook.record(gen=g, evals=evals, **record)
                 if verbose:
                     print(logbook.stream)
 
-        for ind in pop:
+        for ind in archive:
             ind.fitness.values = toolbox.evaluate(ind,pop=pop)
-        return pop, logbook
+        return archive, logbook
     
 
 class ExperimentCoevolution:
