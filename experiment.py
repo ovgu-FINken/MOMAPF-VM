@@ -242,6 +242,8 @@ class Experiment:
 
         for ind in archive:
             ind.fitness.values = toolbox.evaluate(ind,pop=pop)
+        #recompute crowding distance
+        archive = toolbox.select(archive, len(archive))
         return archive, logbook
     
 
