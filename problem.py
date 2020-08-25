@@ -61,7 +61,7 @@ class DubinsMOMAPF():
         
     
     def waypoints_to_path(self, wps):
-        return waypoints_to_path(wps, model=self.model, r=self.r, step=self.step)
+        return waypoints_to_path(wps, model=self.model, r=self.r, step=self.step, FIX_ANGLES=True)
 
     
     def agents_objectives(self, agents):
