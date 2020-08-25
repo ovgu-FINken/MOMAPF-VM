@@ -118,8 +118,12 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
             curve = bezier.Curve(nodes, degree=3)
             l = np.linspace(0.0, 1.0, num=int(curve.length / s))
             points = curve.evaluate_multi(l)
-            angles = [curve.evaluate_hodograph(i) for i in l]
-            angles = [np.arctan2(x[1], x[0])[0] for x in angles]
+            angles = []
+            if FIX_ANGLES:
+                angles = [curve.evaluate_hodograph(i) for i in l]
+                angles = [np.arctan2(x[1], x[0])[0] for x in angles]
+            else:
+                angles = [0 for _ in l]
             for i, (x, y) in enumerate(points.transpose()):
                 path.append( (x, y, angles[i]) )
             
