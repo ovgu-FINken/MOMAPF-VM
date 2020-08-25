@@ -370,6 +370,7 @@ def logbook_to_df(logbook):
             "evals": evals,
             "hv": log["hv"],
             "walltime": log["walltime"],
+            "archive": log["len(archive)"]
         }
         for i, _ in enumerate(log['median']):
             data_i[f"f_{i}_median"] = log['median'][i]
