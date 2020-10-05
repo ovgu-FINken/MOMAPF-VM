@@ -23,7 +23,7 @@ from problem import *
 from obstacle_map import *
 
 
-def hypervolume2(ref, df, objective_1="robustness", objective_2="flowtime"):
+def hypervolume2(ref, df, objective_1="robustness", objective_2="time"):
     x_last = ref[0]
     hv = 0
     for i, x in df.loc[df.non_dominated].sort_values(by=[objective_1], ascending=False).iterrows():
@@ -37,7 +37,17 @@ def hypervolume2(ref, df, objective_1="robustness", objective_2="flowtime"):
         x_last = x[objective_1]
     return hv
 
-
+def pdom(a, b, ndim=None):
+    aLTb = False
+    if ndim is None:
+        ndim = min(len(a), len(b))
+    for fa, fb in zip(a[:ndim], b[:ndim]):
+        if not fa <= fb :
+            return False
+        elif fa < fb:
+            aLTb = True
+    return aLTb
+    
 class JobStatus(IntEnum):
     TODO = 0
     IN_PROGRESS = 1
@@ -60,9 +70,9 @@ class Experiment:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             if self.settings["use_novelty"]:
-                creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0, -1.0))
+                creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0, -1.0, -1.0))
             else:
-                creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0))
+                creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0, -1.0))
                 
             creator.create("Individual", list, fitness=creator.FitnessMin)
         self.toolbox = base.Toolbox()
@@ -83,7 +93,7 @@ class Experiment:
         #self.toolbox.register("evaluate", problem.evaluate_weighted_sum)
         self.toolbox.register("evaluate", self.problem.evaluate, k=self.settings["novelty_k"])
         self.toolbox.register("mate", self.problem.crossover)
-        self.toolbox.register("mutate", self.problem.all_mutations, p=self.settings['mutation_p'], sigma=self.settings['sigma'], sigma_full=self.settings['sigma_full'])
+        self.toolbox.register("mutate", self.problem.all_mutations, **self.settings["mutation_settings"])
         self.toolbox.register("select", tools.selNSGA2)
         
     def pop_to_df(self, population):
@@ -100,12 +110,15 @@ class Experiment:
                     'non_dominated': i == 0,
                     'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
                     'individual': j,
-                    'value': json.dumps(ind),
                     'robustness' : f[0],
-                    'flowtime' : f[1],
-                    'makespan' : f[2],
+                    'time' : f[1],
+                    'length' : f[2],
                     'collision' : feasible,
                 }
+                try:
+                    i_data['value'] = json.dumps(ind),
+                except:
+                    print(ind)
                 data.append(i_data)
         return pd.DataFrame(data)
     
@@ -130,6 +143,7 @@ class Experiment:
         pop = toolbox.population(n=settings['population_size'])
         pop = toolbox.select(pop, settings['population_size']) # for computing crowding distance
         archive = []
+        ndim = 3
 
         for ind in pop:
             ind.fitness.values = toolbox.evaluate(ind)
@@ -137,12 +151,9 @@ class Experiment:
             #archive insertion
             dominated = False
             for a in archive:
-                if a.fitness.values[0] > ind.fitness.values[0] and a.fitness.values[1] >= ind.fitness.values[1] or \
-                   a.fitness.values[0] >= ind.fitness.values[0] and a.fitness.values[1] > ind.fitness.values[1]:
+                if pdom(ind.fitness.values, a.fitness.values, ndim=ndim):
                     archive.remove(a)
-
-                elif a.fitness.values[0] < ind.fitness.values[0] and a.fitness.values[1] <= ind.fitness.values[1] or \
-                     a.fitness.values[0] <= ind.fitness.values[0] and a.fitness.values[1] < ind.fitness.values[1]:
+                elif pdom(a.fitness.values, ind.fitness.values, ndim=ndim):
                     dominated = True
                     break
             if not dominated:
@@ -204,22 +215,16 @@ class Experiment:
                     #archive insertion
                     dominated = False
                     for a in archive:
-                        if a.fitness.values[0] > ind.fitness.values[0] and a.fitness.values[1] >= ind.fitness.values[1] or \
-                           a.fitness.values[0] >= ind.fitness.values[0] and a.fitness.values[1] > ind.fitness.values[1]:
+                        if pdom(ind.fitness.values, a.fitness.values, ndim=ndim):
                             archive.remove(a)
-                            
-                        elif a.fitness.values[0] < ind.fitness.values[0] and a.fitness.values[1] <= ind.fitness.values[1] or \
-                             a.fitness.values[0] <= ind.fitness.values[0] and a.fitness.values[1] < ind.fitness.values[1]:
+                        elif pdom(a.fitness.values, ind.fitness.values, ndim=ndim):
                             dominated = True
                             break
                     if not dominated:
                         archive += [ind]
-                        
-                            
-                            
+                    evals += 1
                 else:
-                    ind.fitness.values = ind.fitness.values[0], ind.fitness.values[1], toolbox.evaluate(ind, pop=pop, novelty_only=True)[2]
-                evals += 1
+                    ind.fitness.values = ind.fitness.values[0], ind.fitness.values[1], ind.fitness.values[2], toolbox.evaluate(ind, pop=pop, novelty_only=True)[3]
             pop_feasible = []
             pop_infeasible = []
             for ind in pop:
@@ -297,12 +302,15 @@ class ExperimentCoevolution:
                     'non_dominated': i == 0,
                     'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
                     'individual': j,
-                    'value': json.dumps(ind),
                     'robustness' : f[0],
                     'flowtime' : f[1],
                     'makespan' : f[2],
                     'collision' : feasible,
                 }
+                try:
+                    i_data['value'] = json.dumps(ind)
+                except Exception as e:
+                    print(ind)
                 data.append(i_data)
         return pd.DataFrame(data)
     

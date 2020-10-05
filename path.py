@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import itertools
 import bezier
+from scipy.interpolate import splev, splrep
 
 from enum import IntEnum
 
@@ -14,6 +15,7 @@ class Vehicle(IntEnum):
     RTR = 3
     REEDS_SHEPP = 4
     BEZIER = 5
+
 
 class Metric(IntEnum):
     MIN = 1
@@ -32,7 +34,7 @@ def short_angle_range(phi1, phi2, r_step=0.2):
     return np.arange(phi1, phi2, -r_step)
     
 
-def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS, FIX_ANGLES=False):
+def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS, FIX_ANGLES=False, spline_degree=3):
     path = []
     for wp1, wp2 in zip(waypoints[:-1], waypoints[1:]):
         #set step-size for this segment
@@ -111,6 +113,7 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
         elif model == Vehicle.BEZIER:
             control_point1 = wp1[0] + np.sin(wp1[2])*r, wp1[1] + np.cos(wp1[2])*r
             control_point2 = wp2[0] - np.sin(wp2[2])*r, wp2[1] - np.cos(wp2[2])*r
+            points = []
             nodes = np.asfortranarray([
                 [wp1[0], control_point1[0], control_point2[0], wp2[0]],
                 [wp1[1], control_point1[1], control_point2[1], wp2[1]]
@@ -124,11 +127,9 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
                 angles = [np.arctan2(x[1], x[0])[0] for x in angles]
             else:
                 angles = [0 for _ in l]
+                
             for i, (x, y) in enumerate(points.transpose()):
                 path.append( (x, y, angles[i]) )
-            
-                
-            
             
         else:
             print("NO VEHICLE MODEL!")
@@ -146,11 +147,15 @@ def single_agent_objectives(agents, index, r=1, step=0.1, model=None, obstacles=
     return robustness, lp
     
 
+def wp_dist(wp1, wp2):
+    return np.sqrt((wp1[0] - wp2[0])**2 + (wp1[1] - wp2[1])**2)
+    
 def agents_objectives(agents, r=1, step=0.1, model=None, obstacles=None, metric=None):
     paths = [waypoints_to_path(agent, r=r, step=step, model=model) for agent in agents]
     robustness = robustness_from_paths(paths, obstacles=obstacles, metric=metric)
     lp = [len(path)*step for path in paths]
-    return robustness, np.max(lp), np.mean(lp)
+    path_dist = [sum(map(wp_dist, p[:-1], p[1:])) for p in paths]
+    return robustness, np.mean(lp), np.mean(path_dist)
 
 
 def plot_waypoints(wp, color=None, alpha=0.05, marker="o"):
@@ -159,7 +164,7 @@ def plot_waypoints(wp, color=None, alpha=0.05, marker="o"):
     return plt.plot(x, y, marker, color=color, alpha=alpha)
 
 
-def wps_to_df(wps):
+def wps_to_df(wps, additional_args={}):
     data = []
     for i, agent in enumerate(wps):
         for j, wp in enumerate(agent):
@@ -167,11 +172,12 @@ def wps_to_df(wps):
                 "x": wp[0],
                 "y": wp[1],
                 "phi": wp[2],
-                "agent" : f"A{i}",
+                "agent" : i,
                 "time": j
             }
             if len(wp) > 3:
                 data_i["velocity"] = wp[3]
+            data_i.update(additional_args)
             data.append(data_i)
     return pd.DataFrame(data)
 

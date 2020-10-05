@@ -12,17 +12,17 @@ def random_waypoint(domain=(0.0, 100.0), velocity_control=False):
     y = np.random.uniform(low=domain[0], high=domain[1])
     phi = np.random.uniform(low=0.0, high=np.pi*2)
     if velocity_control:
-        return [x, y, phi, np.random.uniform(0.3, 1.0)]
+        return [x, y, phi, np.random.uniform(0.2, 1.0)]
     return [x, y, phi]
 
 def circle_waypoint(domain=(0.0, 100.0), r=75, angle=0):
     center = (domain[0] + domain[1]) / 2
-    x = np.sin(angle) * r + center
-    y = np.cos(angle) * r + center
-    return [x, y, angle]
+    x = np.cos(angle) * r + center
+    y = np.sin(angle) * r + center
+    return [x, y, angle+np.pi/2]
 
 def line_configuration(n_agents=1, domain=(0.0, 200.0)):
-    dh= (domain[1] - domain[0]) / (n_agents + 2)
+    dh= (domain[1] - domain[0]) / (n_agents + 1)
     c = (domain[1] - domain[0]) / 2
     start = []
     end = []
@@ -43,10 +43,35 @@ def line_configuration(n_agents=1, domain=(0.0, 200.0)):
         sy = -1 * sy
     return start, end
 
+def polynomial_mut(x, sigma=0.1, p=0.5, lower=0.0, upper=1.0, **_):
+    r = sigma
+    if np.random.uniform() < 0.5:
+        return x
+    a = 0
+    u = np.random.uniform()
+    x = np.clip(x, lower, upper)
+    if u <= 0.5:
+        xl = (x - lower) / (upper - lower)
+        a = (2.0 * u + ( 1.0 - 2.0*u )*(1.0-xl)**(r+1))**(1.0/(r+1.0))-1.0 
+    else:
+        xr = (upper - x) / (upper - lower)
+        a = 1.0 - (2 * (1 - u) + (2 * u - 0.5) * (1 - xr)**(r+1))**(1/r+1)
+    return np.clip(x + a, lower, upper)
+
+def gauss_mut(x, sigma=0.1, lower=0.0, upper=1.0, **_):
+    u = np.random.normal(0, sigma * (upper - lower))
+    return np.clip(x + u, lower, upper)
+
 class DubinsMOMAPF():
 
-    def __init__(self, n_agents=4, domain=(0.0, 100.00), radius=5.0, step=0.1, model=Vehicle.DUBINS, obstacles=None, metric=None, velocity_control=False, **unused_settings):
-        self.start, self.goals = line_configuration(n_agents=n_agents, domain=domain)
+    def __init__(self, n_agents=4, domain=(0.0, 100.00), radius=5.0, step=0.1, model=Vehicle.DUBINS, obstacles=None, metric=None, velocity_control=False, configuration="line", **unused_settings):
+        if configuration == "line":
+            self.start, self.goals = line_configuration(n_agents=n_agents, domain=domain)
+        elif configuration == "circle":
+            self.start  = [circle_waypoint(domain=domain, r=70, angle=i) for i in np.linspace(0, 2*np.pi, n_agents+1)[:-1]]
+            self.goals= [circle_waypoint(domain=domain, r=70, angle=i+np.pi) for i in np.linspace(0, 2*np.pi, n_agents+1)[:-1]]
+        else:
+            print("configuration not found")
         self.r = radius
         self.step = step
         self.n_agents = n_agents
@@ -54,7 +79,6 @@ class DubinsMOMAPF():
         self.model = model
         self._last_fig = None
         self._anim_paths = None
-        self.sct = None
         self.obstacles=obstacles
         self.metric = metric
         self.velocity_control = velocity_control
@@ -106,10 +130,10 @@ class DubinsMOMAPF():
 
     def evaluate(self, vector, pop = None, k=10, novelty_only=False):
         agents = None
-        robustness, makespan, flowtime = 0,0,0
+        robustness, time,  length = 0,0,0
         if not novelty_only:
             agents = self.decode(vector)
-            robustness, makespan, flowtime = self.agents_objectives(agents)
+            robustness, time, length = self.agents_objectives(agents)
         nearest = []
         knn = None
         v = np.array(vector)
@@ -125,58 +149,90 @@ class DubinsMOMAPF():
                 novelty_minimisation = 1e20
             else:
                 novelty_minimisation = 1.0 / s
-        return 100-robustness, flowtime, novelty_minimisation
+        return 100-robustness, time, length, novelty_minimisation
     
-    def all_mutations(self, vector, p=(1.0,1.0,1.0), sigma=None, sigma_full=None, **kwargs):
-        x = np.random.rand() * np.sum(p)
-        if x < p[0]:
-            return self.skip_mutation(vector)
-        if x < p[0] + p[1]:
+    def all_mutations(self, vector, type_distribution={'skip': 1.0, 'full': 1.0}, mode="gauss", **params):
+        x = np.random.rand() * sum(type_distribution.values())
+        a = 0
+        
+        
+        a += type_distribution['skip']
+        if x < a:
+            return self.skip_mutation(vector, mode=mode, params=params)
+        
+        a += type_distribution['uniform']
+        if x < a:
             return self.uniform_mutation(vector)
-        if len(p) > 3 and x >= p[0] + p[1] + p[2]:
-            self.mutate_full(vector, sigma=sigma_full)
-        return self.mutate(vector, sigma=sigma)
-
-    def mutate(self, vector, sigma=0.1, debug=False):
+        
+        a += type_distribution['waypoint']
+        if x < a:
+            return self.mutate(vector, params=params, mode=mode)
+            
+        a += type_distribution['agent']
+        if x < a:
+            return self.mutate_agent(vector, params=params, mode=mode)
+        
+        return self.mutate_full(vector, params=params, mode=mode)
+    
+    def mutate(self, vector, params={}, mode="gauss", debug=False, **_):
+        mutation_function = gauss_mut
+        params['sigma'] = params['sigma_waypoint']
+        if mode == "polynomial":
+            mutation_function = polynomial_mut
         wps = self.decode(vector)
         agent = np.random.randint(len(wps))
         wp = 1 + np.random.randint(len(wps[agent])-2)
         if debug:
-            print(f"changing wp {wp} of agent {agent}, with sigma={sigma}")
+            print(f"changing wp {wp} of agent {agent}, with sigma={params['sigma']}")
             print(f"old: {wps[agent][wp]}")
-        s = sigma*(self.domain[1]-self.domain[0])
-        wps[agent][wp][0] += np.random.normal(0.0, s)
-        wps[agent][wp][0] = np.clip(wps[agent][wp][0], self.domain[0], self.domain[1])
-        wps[agent][wp][1] += np.random.normal(0.0, s)
-        wps[agent][wp][1] = np.clip(wps[agent][wp][1], self.domain[0], self.domain[1])
-        wps[agent][wp][2] += np.random.normal(0.0, sigma*2*np.pi)
+        wps[agent][wp][0] = mutation_function(wps[agent][wp][0], lower=self.domain[0], upper=self.domain[1], **params)
+        wps[agent][wp][1] = mutation_function(wps[agent][wp][1], lower=self.domain[0], upper=self.domain[1], **params)
+        wps[agent][wp][2] = mutation_function(wps[agent][wp][2]%(2*np.pi), lower=0.0, upper=2.0*np.pi, **params)
         if len(wps[agent][wp])>3:
-            wps[agent][wp][3] += np.random.normal(0.0, sigma)
-            wps[agent][wp][3] = np.clip(wps[agent][wp][3], 0.3, 1.0)
+            wps[agent][wp][3] = mutation_function(wps[agent][wp][3], lower=0.2, upper=1.0, **params)
         result = self.encode(wps)
         if debug:
             print(f"new: {wps[agent][wp]}")
             print(f"full: {result}")
-        assert(result != vector)
+        #assert(result != vector)
         for i, v in enumerate(result):
             vector[i] = v
         return vector,
     
-    def mutate_full(self, vector, sigma=0.01):
-        s = sigma*(self.domain[1]-self.domain[0])
+    def mutate_agent(self, vector, params={}, mode="gauss"):
+        params['sigma'] = params['sigma_agent']
+        mutation_function = gauss_mut
+        if mode == "polynomial":
+            mutation_function = polynomial_mut
+        wps = self.decode(vector).copy()
+        agent = np.random.randint(len(wps))
+        for wp in range(1,len(wps[agent])-1):
+            wps[agent][wp][0] = mutation_function(wps[agent][wp][0], lower=self.domain[0], upper=self.domain[1], **params)
+            wps[agent][wp][1] = mutation_function(wps[agent][wp][1], lower=self.domain[0], upper=self.domain[1], **params)
+            wps[agent][wp][2] = mutation_function(wps[agent][wp][2], lower=0.0, upper=2.0*np.pi, **params)
+            if len(wps[agent][wp])>3:
+                wps[agent][wp][3] = mutation_function(wps[agent][wp][3], lower=0.2, upper=1.0, **params)
+        result = self.encode(wps)
+        #assert(result != vector)
+        for i, v in enumerate(result):
+            vector[i] = v
+        return vector,
+    
+    def mutate_full(self, vector, params={}, mode="gauss"):
+        params['sigma'] = params['sigma_full']
+        mutation_function = gauss_mut
+        if mode == "polynomial":
+            mutation_function = polynomial_mut
         wps = self.decode(vector).copy()
         for agent in range(len(wps)):
             for wp in range(1,len(wps[agent])-1):
-                wps[agent][wp][0] += np.random.normal(0.0, s)
-                wps[agent][wp][0] = np.clip(wps[agent][wp][0], self.domain[0], self.domain[1])
-                wps[agent][wp][1] += np.random.normal(0.0, s)
-                wps[agent][wp][1] = np.clip(wps[agent][wp][1], self.domain[0], self.domain[1])
-                wps[agent][wp][2] += np.random.normal(0.0, sigma*2*np.pi)
+                wps[agent][wp][0] = mutation_function(wps[agent][wp][0], lower=self.domain[0], upper=self.domain[1], **params)
+                wps[agent][wp][1] = mutation_function(wps[agent][wp][1], lower=self.domain[0], upper=self.domain[1], **params)
+                wps[agent][wp][2] = mutation_function(wps[agent][wp][2], lower=0.0, upper=2.0*np.pi, **params)
                 if len(wps[agent][wp])>3:
-                    wps[agent][wp][3] += np.random.normal(0.0, sigma)
-                    wps[agent][wp][3] = np.clip(wps[agent][wp][3], 0.3, 1.0)
+                    wps[agent][wp][3] = mutation_function(wps[agent][wp][3], lower=0.2, upper=1.0, **params)
         result = self.encode(wps)
-        assert(result != vector)
+        #assert(result != vector)
         for i, v in enumerate(result):
             vector[i] = v
         return vector,
@@ -194,7 +250,7 @@ class DubinsMOMAPF():
             print(vector)
         return vector,
 
-    def skip_mutation(self, vector, debug=False):
+    def skip_mutation(self, vector, debug=False, **kwargs):
         agent_i = np.random.randint(self.n_agents)
         wps = self.decode(vector)
         i = 1+np.random.randint(len(wps[agent_i])-2)
@@ -204,7 +260,7 @@ class DubinsMOMAPF():
         if len(path) < 10:
             if debug:
                 print("skip-mutation-skipped")
-            return self.mutate(vector)
+            return self.mutate(vector, **kwargs)
         ix_rand = np.random.randint(low=1, high=len(path)-2)
         wp = list(path[ix_rand])
         if len(wps[agent_i][i])>3:
@@ -237,18 +293,15 @@ class DubinsMOMAPF():
     def animation_update(self, i):
         x = []
         y = []
-        #plt.plot(tri[:,0], tri[:,1], 'g-')
-        for path in self._anim_paths:
+        for j, path in enumerate(self._anim_paths):
             if len(path) > i:
-                a = self._get_point(path[i], 10, path[i][2])
-                b = self._get_point(path[i], 10/2, path[i][2]+150./180.*np.pi)
-                c = self._get_point(path[i], 10/2, path[i][2]-150./180.*np.pi)
-                x = x + [a[0], b[0], c[0]]
-                y = y + [a[1], b[1], c[1]]
-        self.sct.set_data(x, y)
-        return self.sct,
+                self.circles[j].center = (path[i][0], path[i][1])
+                self.polygons[j].xy = [self._get_point( (path[i][0],path[i][1]), self.circles[j].radius*0.5, path[i][2]+offset) for offset in [0, -np.pi*2/3, np.pi*2/3]]
+            else:
+                self.circles[j].radius = 0
+                self.polygons[j].xy = [self._get_point( (path[-1][0],path[-1][1]), self.circles[j].radius*0.05, path[-1][2]+offset) for offset in [0, -np.pi*2/3, np.pi*2/3]]
 
-    def agents_animation(self, agents, filename=None, plot_range=None):
+    def agents_animation(self, agents, filename=None, plot_range=None, safety_radius=10, duration = 5.0, speedup=3):
         plt.ioff()
         fig = plt.figure(figsize=(5,5))
         objectives = self.agents_objectives(agents)
@@ -259,16 +312,25 @@ class DubinsMOMAPF():
                 plot_range = np.arange(*self.domain)
             self.obstacles.heatmap(plot_range=plot_range)
         self._anim_paths = None
-        self.sct = None
-        self._anim_paths = [waypoints_to_path(agent, r=self.r, step=objectives[1]/100, model=self.model, FIX_ANGLES=True) for agent in agents]
+        #step = objectives[1]/100
+        step = self.step
+        self._anim_paths = [waypoints_to_path(agent, r=self.r, step=step, model=self.model, FIX_ANGLES=True) for agent in agents]
+        self.circles = [plt.Circle( (a[0][0], a[0][1]), safety_radius, fc=(0.3, 0.1, 0.1, 0.1), ec=(0.8,0.1,0.1)) for a in agents]
+        self.polygons = [plt.Polygon( [self._get_point( (a[0][0],a[0][1]),safety_radius*0.5, a[0][2]+offset) for offset in [0, -np.pi*2/3, np.pi*2/3]], fc=(0.8,0.1,0.1))for a in agents]
+        
         for path in self._anim_paths:
-            plot_waypoints(path)
-        self.sct, = plt.plot([], [], "ro")
+            plot_waypoints(path),
+        ax = plt.gca()
+        for patch in self.circles:
+            ax.add_patch(patch)
+        for poly in self.polygons:
+            ax.add_patch(poly)
         #plt.title(f"robustness: {objectives[0]}\nmakespan: {objectives[1]}\nflowtime: {objectives[2]}")
         plt.tight_layout()
         longest = max([len(p) for p in self._anim_paths])
-        anim = animation.FuncAnimation(fig, self.animation_update, frames=longest,
-                                           interval=100, blit=False, repeat_delay=1000)
+        intervall = duration / longest * 1000
+        anim = animation.FuncAnimation(fig, self.animation_update, frames=range(0, longest, speedup),
+                                           interval=intervall, blit=False, repeat_delay=1000)
 
         if filename is not None:
             anim.save(filename)
@@ -295,6 +357,9 @@ class DubinsMOMAPF():
         if show:
             plt.show()
     
-    def path_df(self, ind):
+    def path_df(self, ind, additional_args={}):
         wps = self.decode(ind)
-        return wps_to_df([waypoints_to_path(wp, r=self.r, step=self.step, model=self.model) for wp in wps])
+        df = wps_to_df([waypoints_to_path(wp, r=self.r, step=self.step, model=self.model) for wp in wps])
+        for k, v in additional_args.items():
+            df[k] = v
+        return df
