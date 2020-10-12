@@ -15,6 +15,8 @@ class Vehicle(IntEnum):
     RTR = 3
     REEDS_SHEPP = 4
     BEZIER = 5
+    DUBINS_ADAPTIVE = 6
+    REEDS_SHEPP_ADAPTIVE = 7
 
 
 class Metric(IntEnum):
@@ -40,19 +42,23 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
         #set step-size for this segment
         s = step
         #set step-size by speed for last wp of the segment
+        v = 1.0
         if len(wp2) > 3:
-            s = step*wp2[3]
+            v = wp2[3]
         #if the segment is the last in the path, the wp will have no speed, use the speed from the first wp of the segment
         elif len(wp1) > 3:
-            s = step*wp1[3]
-        # if the speed is >1, reset the step size to max-step-size
-        if s > step:
-            s = step
-        if s < 0.3 * step:
-            s = 0.3 * step
+            v = wp1[3]
+            
+        v = np.clip(v, 0.3, 1.0)
+        s = step*v
+        
         if model == Vehicle.DUBINS:
             dbp = dubins.shortest_path(wp1, wp2, r)
             path = path + dbp.sample_many(s)[0]
+        elif model == Vehicle.DUBINS_ADAPTIVE:
+            dbp = dubins.shortest_path(wp1, wp2, r*v)
+            path = path + dbp.sample_many(s)[0]
+            
         elif model == Vehicle.RTR or model == Vehicle.STRAIGHT:
             # rotate (1)
             dist = np.linalg.norm(np.array(wp1[0:2]) - np.array(wp2[0:2]))
@@ -94,9 +100,12 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
 #                if len(path) < 3:
 #                    print("OH NO")
 #                    print(f"{wp1}, {wp2}, {path}, {phi}")
-        elif model==Vehicle.REEDS_SHEPP:
+        elif model==Vehicle.REEDS_SHEPP or model==Vehicle.REEDS_SHEPP_ADAPTIVE:
             part = []
-            sample = reeds_shepp.path_sample(wp1, wp2, r, s)
+            r_temp = r
+            if model == Vehicle.REEDS_SHEPP_ADAPTIVE:
+                r_temp = r * v
+            sample = reeds_shepp.path_sample(wp1, wp2, r_temp, s)
             for s in sample:
                 part.append( (s[0], s[1], s[2]) )
             # cleanup angles

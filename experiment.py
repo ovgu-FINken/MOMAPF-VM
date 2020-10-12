@@ -207,7 +207,7 @@ class Experiment:
                 if not duplicate:
                     pop.append(ind)
             
-            
+            # fitness evaluation and archiving
             evals = 0
             for ind in pop:
                 if not ind.fitness.valid:
