@@ -22,6 +22,8 @@ from deap import base, creator, tools, algorithms
 from problem import *
 from obstacle_map import *
 
+import argparse
+
 
 def hypervolume2(ref, df, objective_1="robustness", objective_2="time"):
     x_last = ref[0]
@@ -420,8 +422,13 @@ class ExperimentRunner:
         #self.table_populations = sqlalchemy.Table('populations', self.metadata, autoload=True)
         #self.table_logs = sqlalchemy.Table('logs', self.metadata, autoload=True)
     
-    def fetch_job(self, verbose=False):
-        select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.status == JobStatus.TODO.value) | (self.table_jobs.c.status == JobStatus.FAILED.value))
+    def fetch_job(self, verbose=False, job_index:int=None):
+        select = None
+        if job_index is None:
+            select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.status == JobStatus.TODO.value) | (self.table_jobs.c.status == JobStatus.FAILED.value))
+        else:
+            select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.index == job_index) )
+            
         r = self.db.execute(select)
         row = r.fetchone()
         r.close()
@@ -451,7 +458,7 @@ class ExperimentRunner:
         self.db.execute(update).close()
         
     
-    def fetch_and_execute(self):
+    def fetch_and_execute(self, job_index=None):
         """fetch jobs with the TODO-status from the DB and run the experiment.
         
         1. Fetch Job
@@ -461,7 +468,7 @@ class ExperimentRunner:
         4. b) In case of exception set job-status to FAIL
         
         """
-        job = self.fetch_job()
+        job = self.fetch_job(job_index=job_index)
         if job is None:
             return False
         return self.execute_and_save(job)
@@ -691,9 +698,30 @@ def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file
     
     
 if __name__ == "__main__":
-    mpl = multiprocessing.log_to_stderr()
-    mpl.setLevel(logging.WARN)
-    engine = sqlalchemy.create_engine(get_key(filename="db.key"))
+    parser = argparse.ArgumentParser(description='Experiment Runner')
+    parser.add_argument("--db", type=str)
+    parser.add_argument("--multiprocessing", action='store_true')
+    parser.add_argument("--run", type=int, nargs='+')
+    parser.add_argument("--slurm", action="store_true")
+    args = parser.parse_args()
+    
+    key = "db.key"
+    if args.db:
+        key = args.db
+        
+    engine = sqlalchemy.create_engine(get_key(filename=key))
     runner = ExperimentRunner(engine)
-    runner.execute_pool(workers=65)
+    if args.run:
+        print(f"executing runs: {args.run}")
+        for i in args.run:
+            runner.fetch_and_execute(job_index=i)
+        
+    elif args.slurm:
+        print("slurm")
+    
+    elif args.multiprocessing:
+        print("multiprocessing.pool")
+        mpl = multiprocessing.log_to_stderr()
+        mpl.setLevel(logging.WARN)
+        runner.execute_pool(workers=65)
     

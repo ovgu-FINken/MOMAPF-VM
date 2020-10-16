@@ -8,30 +8,44 @@ from experiment import *
 
 if __name__=="__main__":
     engine = sqlalchemy.create_engine(get_key(filename="db.key"))
+    mutation_settings = {
+        'type_distribution' : {
+                'skip' : 1.0,
+                'uniform' : 0.0,
+                'waypoint' : 1.0,
+                'agent' : 1.0,
+                'full' : 1.0,
+            }, # distribution of mutation types
+        'sigma_waypoint' : 0.3, # sigma for gauss-distribution in waypoint-gauss-mutation
+        'sigma_agent' : 0.1, # sigma for gauss-distribution in agent-wide mutation
+        'sigma_full' : 0.03, # sigma for gauss-mutation of all waypoints at the same time
+        'mode' : "polynomial",
+        'p' : 0.5,
+    }
     settings = {
-        'radius': 5, # turning radius (dubins vehicle)
-        'model': Vehicle.DUBINS, # vehicle model
+        'radius': 10, # turning radius (dubins vehicle)
+        'model': Vehicle.DUBINS_ADAPTIVE, # vehicle model
         'step': 1, # step size for simulated behaviour
         'domain': (0, 200.0), # area of operation (-100, 100) means that the vehicles will move in a square from (x=-100, y=-100) to (x=100, y=100)
-        'n_agents': 5, # number of agents
-        'n_waypoints': 4, # waypoints per agent (excluding start and end)
+        'min_speed' : 0.2, 
+        'n_agents': 7, # number of agents
+        'n_waypoints': 3, # waypoints per agent (excluding start and end)
         'n_gens': 200, # number of generations to run the algorithm
-        'population_size': 4*20, # population size for the algorithm, shoulod be divisible by 4 for nsga2
+        'population_size': 64, # population size for the algorithm, shoulod be divisible by 4 for nsga2
         'cxpb': .4, # crossover probablity
         'mutpb': 0.8, # mutation rate (not applicable in nsga2)
-        'mutation_p': (0.5, .0, 1.0, 1.0), # distribution of mutation types
-        'sigma' : 0.4, # sigma for gauss-distribution in waypoint-gauss-mutation
-        'sigma_full' : 0.01, # sigma for gauss-mutation of all waypoints at the same time
+        'mutation_settings' : mutation_settings,
+
         'feasiblity_threshold': 99.0, # how robust a solution has to be to be regarded feasible (100-min_dist)
         'offset': (0, 0), # offset of the map to the agents
-        'map_name': "obstacles/gaps_2_hard_100.npy", # name of the obstacle-map file
+        'map_name': "obstacles/gaps_3_easy_60.npy", # name of the obstacle-map file
         'metric': Metric.MIN, # metric to use in fitness calculation
         'hv_ref': (100, 600), # reference for hyper volume
         'velocity_control': True, # turn on velocity control (4th dimension on wp)
-        'novelty_k': 8, # k for knn- in novelty objective
+        'novelty_k': 5, # k for knn- in novelty objective
         'use_novelty': True,
+        'configuration': 'circle',
     }
-
     job_settings = {
         "delete" : False,
         "runs" : 31,
@@ -62,7 +76,7 @@ if __name__=="__main__":
     j = job_settings.copy()
     j["group"] = "normal"
     for a in [3,5,7]:
-        for b in [3,5]:
+        for b in [2, 3,5]:
             for env in envs:
                 s["n_agents"] = a
                 s["n_waypoints"] = b
@@ -75,7 +89,7 @@ if __name__=="__main__":
     j = job_settings.copy()
     j["group"] = "novelty"
     for a in [3,5,7]:
-        for b in [3,5]:
+        for b in [2, 3,5]:
             for env in envs:
                 s["n_agents"] = a
                 s["n_waypoints"] = b
