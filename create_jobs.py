@@ -8,27 +8,44 @@ from experiment import *
 
 if __name__=="__main__":
     engine = sqlalchemy.create_engine(get_key(filename="db.key"))
-    settings = {
-        'radius': 10,
-        'step': 1,
-        'r_step': 0.2,
-        'domain': (0, 200.0),
-        'n_agents': 5,
-        'n_waypoints': 3,
-        'n_gens': 1000,
-        'population_size': 100,
-        'cxpb': 0.4,
-        'mutpb': 0.8,
-        'mutation_p': (0.5, .0, .0, 1.0),
-        'sigma' : 0.01,
-        'model': Vehicle.DUBINS,
-        'feasiblity_threshold': 95,
-        'offset': (0, 0),
-        'map_name': "cross.obstacles.npy",
-        'metric': Metric.MIN,
-        'hv_ref': (100, 400),
+    mutation_settings = {
+        'type_distribution' : {
+                'skip' : 1.0,
+                'uniform' : 0.0,
+                'waypoint' : 1.0,
+                'agent' : 1.0,
+                'full' : 1.0,
+            }, # distribution of mutation types
+        'sigma_waypoint' : 0.3, # sigma for gauss-distribution in waypoint-gauss-mutation
+        'sigma_agent' : 0.1, # sigma for gauss-distribution in agent-wide mutation
+        'sigma_full' : 0.03, # sigma for gauss-mutation of all waypoints at the same time
+        'mode' : "polynomial",
+        'p' : 0.5,
     }
+    settings = {
+        'radius': 10, # turning radius (dubins vehicle)
+        'model': Vehicle.DUBINS_ADAPTIVE, # vehicle model
+        'step': 1, # step size for simulated behaviour
+        'domain': (0, 200.0), # area of operation (-100, 100) means that the vehicles will move in a square from (x=-100, y=-100) to (x=100, y=100)
+        'min_speed' : 0.2, 
+        'n_agents': 7, # number of agents
+        'n_waypoints': 3, # waypoints per agent (excluding start and end)
+        'n_gens': 200, # number of generations to run the algorithm
+        'population_size': 64, # population size for the algorithm, shoulod be divisible by 4 for nsga2
+        'cxpb': .4, # crossover probablity
+        'mutpb': 0.8, # mutation rate (not applicable in nsga2)
+        'mutation_settings' : mutation_settings,
 
+        'feasiblity_threshold': 99.0, # how robust a solution has to be to be regarded feasible (100-min_dist)
+        'offset': (0, 0), # offset of the map to the agents
+        'map_name': "obstacles/gaps_3_easy_60.npy", # name of the obstacle-map file
+        'metric': Metric.MIN, # metric to use in fitness calculation
+        'hv_ref': (100, 600), # reference for hyper volume
+        'velocity_control': True, # turn on velocity control (4th dimension on wp)
+        'novelty_k': 5, # k for knn- in novelty objective
+        'use_novelty': True,
+        'configuration': 'circle',
+    }
     job_settings = {
         "delete" : False,
         "runs" : 31,
@@ -42,48 +59,40 @@ if __name__=="__main__":
     j = job_settings.copy()
     j["group"] = "quick"
     j["experiment"] = "quick"
-    j["runs"] = 31
+    j["runs"] = 11
     j["delete"] = True
     s["n_gens"] = 50
-
     s["population_size"] = 16
     add_jobs_to_db(s, **j)
-    #add_jobs_for_each_model(settings.copy(), **job_settings.copy())
-
-    """
-    s = settings.copy()
-    j = job_settings.copy()
-    j["group"] = "pop"
-    for a in [4*i*i for i in range(2,6)]:
-        s["population_size"] = a
-        s["n_gens"] = int(250 * 100 / a)
-        print(f"{a} : {s['n_gens']}")
-        j["experiment"] = f"pop_{a:.2f}"
-        add_jobs_for_each_model(s.copy(), **j.copy())
-    """
-    """
-    s = settings.copy()
-    j = job_settings.copy()
-    j["group"] = "sigma"
-    for a in np.logspace(-2.5, -1.5, num=5):
-        s["sigma"] = a
-        j["experiment"] = f"sigma_{a:.3f}"
-        add_jobs_for_each_model(s.copy(), **j.copy())
-    """
     
-    labyrinth = [20, 40, 60, 80, 100, 120, 140, 160, 180]
-    environments = [f"labyrinth_{i}.obstacles.npy" for i in labyrinth]
-    environments += [f"labyrinth_2_{i}.obstacles.npy" for i in labyrinth]
+    labyrinth = [95, 100, 105, 120]
+    gaps = [2, 3]
+    envs = []
+    for i in labyrinth:
+        for j in gaps:
+            envs = envs + [f"obstacles/gaps_{j}_medium_{i}.npy"]
     
     s = settings.copy()
     j = job_settings.copy()
-    j["group"] = "all"
-    for a in [2,3,4,5,7,9,11]:
-        for b in range(2, 6):
-            for env in ["no.obstacles.npy", "cross.obstacles.npy", "bar.obstacles.npy"]+environemnts:
+    j["group"] = "normal"
+    for a in [3,5,7]:
+        for b in [2, 3,5]:
+            for env in envs:
                 s["n_agents"] = a
                 s["n_waypoints"] = b
                 s["map_name"] = env
                 j["experiment"] = f"{env}_{a}_{b}"
-                j["group"] = env
+                add_jobs_for_each_model(s.copy(), **j.copy())
+
+    s = settings.copy()
+    s['use_novelty'] = True
+    j = job_settings.copy()
+    j["group"] = "novelty"
+    for a in [3,5,7]:
+        for b in [2, 3,5]:
+            for env in envs:
+                s["n_agents"] = a
+                s["n_waypoints"] = b
+                s["map_name"] = env
+                j["experiment"] = f"nov_{env}_{a}_{b}"
                 add_jobs_for_each_model(s.copy(), **j.copy())

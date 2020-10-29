@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import itertools
 import bezier
+from scipy.interpolate import splev, splrep
 
 from enum import IntEnum
 
@@ -14,6 +15,9 @@ class Vehicle(IntEnum):
     RTR = 3
     REEDS_SHEPP = 4
     BEZIER = 5
+    DUBINS_ADAPTIVE = 6
+    REEDS_SHEPP_ADAPTIVE = 7
+
 
 class Metric(IntEnum):
     MIN = 1
@@ -32,19 +36,36 @@ def short_angle_range(phi1, phi2, r_step=0.2):
     return np.arange(phi1, phi2, -r_step)
     
 
-def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS, FIX_ANGLES=False):
+def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS, FIX_ANGLES=False, spline_degree=3):
     path = []
     for wp1, wp2 in zip(waypoints[:-1], waypoints[1:]):
+        #set step-size for this segment
+        s = step
+        #set step-size by speed for last wp of the segment
+        v = 1.0
+        if len(wp2) > 3:
+            v = wp2[3]
+        #if the segment is the last in the path, the wp will have no speed, use the speed from the first wp of the segment
+        elif len(wp1) > 3:
+            v = wp1[3]
+            
+        v = np.clip(v, 0.3, 1.0)
+        s = step*v
+        
         if model == Vehicle.DUBINS:
             dbp = dubins.shortest_path(wp1, wp2, r)
-            path = path + dbp.sample_many(step)[0]
+            path = path + dbp.sample_many(s)[0]
+        elif model == Vehicle.DUBINS_ADAPTIVE:
+            dbp = dubins.shortest_path(wp1, wp2, r*v)
+            path = path + dbp.sample_many(s)[0]
+            
         elif model == Vehicle.RTR or model == Vehicle.STRAIGHT:
             # rotate (1)
-            dist = np.linalg.norm(np.array(wp1[:-1]) - np.array(wp2[:-1]))
+            dist = np.linalg.norm(np.array(wp1[0:2]) - np.array(wp2[0:2]))
             x = wp1[0]
             y = wp1[1]
             phi = wp1[2] % (2 * np.pi)
-            if dist > step:
+            if dist > s:
                 dx = wp2[0] - wp1[0]
                 dy = wp2[1] - wp1[1]
                 # as per https://docs.scipy.org/doc/numpy/reference/generated/numpy.arctan2.html
@@ -57,9 +78,9 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
                     path.append( (x, y, a) )
             
             # translate
-            steps = dist / step
+            steps = dist / s
             if steps < 1:
-                steps = 1
+                steps = 1.0
             dx = (wp2[0] - wp1[0]) / steps
             dy = (wp2[1] - wp1[1]) / steps
             for _ in range(int(steps)):
@@ -79,11 +100,14 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
 #                if len(path) < 3:
 #                    print("OH NO")
 #                    print(f"{wp1}, {wp2}, {path}, {phi}")
-        elif model==Vehicle.REEDS_SHEPP:
+        elif model==Vehicle.REEDS_SHEPP or model==Vehicle.REEDS_SHEPP_ADAPTIVE:
             part = []
-            sample = reeds_shepp.path_sample(wp1, wp2, r, step)
+            r_temp = r
+            if model == Vehicle.REEDS_SHEPP_ADAPTIVE:
+                r_temp = r * v
+            sample = reeds_shepp.path_sample(wp1, wp2, r_temp, s)
             for s in sample:
-                part.append( (s[0], s[1], s[-1]) )
+                part.append( (s[0], s[1], s[2]) )
             # cleanup angles
             if FIX_ANGLES:
                 for i, xy in enumerate(part[:-1]):
@@ -92,33 +116,36 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
 
                     phi = np.arctan2(dy, dx)
                     path.append( (xy[0], xy[1], phi) ) 
-                path.append(wp2)
+                path.append(wp2[0:3])
             else:
                 path = path + part
         elif model == Vehicle.BEZIER:
             control_point1 = wp1[0] + np.sin(wp1[2])*r, wp1[1] + np.cos(wp1[2])*r
             control_point2 = wp2[0] - np.sin(wp2[2])*r, wp2[1] - np.cos(wp2[2])*r
+            points = []
             nodes = np.asfortranarray([
                 [wp1[0], control_point1[0], control_point2[0], wp2[0]],
                 [wp1[1], control_point1[1], control_point2[1], wp2[1]]
             ])
             curve = bezier.Curve(nodes, degree=3)
-            l = np.linspace(0.0, 1.0, num=int(curve.length / step))
+            l = np.linspace(0.0, 1.0, num=int(curve.length / s))
             points = curve.evaluate_multi(l)
-            angles = [curve.evaluate_hodograph(i) for i in l]
-            angles = [np.arctan2(x[1], x[0])[0] for x in angles]
+            angles = []
+            if FIX_ANGLES:
+                angles = [curve.evaluate_hodograph(i) for i in l]
+                angles = [np.arctan2(x[1], x[0])[0] for x in angles]
+            else:
+                angles = [0 for _ in l]
+                
             for i, (x, y) in enumerate(points.transpose()):
                 path.append( (x, y, angles[i]) )
-            
-                
-            
             
         else:
             print("NO VEHICLE MODEL!")
     
         
     if waypoints[-1] != path[-1]:
-        path.append(waypoints[-1])
+        path.append(waypoints[-1][0:3])
     return path
 
 
@@ -129,11 +156,15 @@ def single_agent_objectives(agents, index, r=1, step=0.1, model=None, obstacles=
     return robustness, lp
     
 
+def wp_dist(wp1, wp2):
+    return np.sqrt((wp1[0] - wp2[0])**2 + (wp1[1] - wp2[1])**2)
+    
 def agents_objectives(agents, r=1, step=0.1, model=None, obstacles=None, metric=None):
     paths = [waypoints_to_path(agent, r=r, step=step, model=model) for agent in agents]
     robustness = robustness_from_paths(paths, obstacles=obstacles, metric=metric)
     lp = [len(path)*step for path in paths]
-    return robustness, np.max(lp), np.mean(lp)
+    path_dist = [sum(map(wp_dist, p[:-1], p[1:])) for p in paths]
+    return robustness, np.mean(lp), np.mean(path_dist)
 
 
 def plot_waypoints(wp, color=None, alpha=0.05, marker="o"):
@@ -142,7 +173,7 @@ def plot_waypoints(wp, color=None, alpha=0.05, marker="o"):
     return plt.plot(x, y, marker, color=color, alpha=alpha)
 
 
-def wps_to_df(wps):
+def wps_to_df(wps, additional_args={}):
     data = []
     for i, agent in enumerate(wps):
         for j, wp in enumerate(agent):
@@ -150,9 +181,12 @@ def wps_to_df(wps):
                 "x": wp[0],
                 "y": wp[1],
                 "phi": wp[2],
-                "agent" : f"A{i}",
+                "agent" : i,
                 "time": j
             }
+            if len(wp) > 3:
+                data_i["velocity"] = wp[3]
+            data_i.update(additional_args)
             data.append(data_i)
     return pd.DataFrame(data)
 
@@ -223,7 +257,8 @@ def single_robustness_from_paths(paths, index, obstacles=None, metric=None):
     else:
         d_obstacles.append(d_a_min)
     if collision:
-        return collision_value 
+        return d_a_min
+        #return collision_value 
     # if no collision check inter agent paths
     d_agents = np.array(d_obstacles) * 2
     for configuration in itertools.zip_longest(*paths):
@@ -253,10 +288,11 @@ def robustness_from_paths(paths, obstacles=None, metric=None):
             for value in d_agent:
                 if value < 0:
                     collision_value += -1 * 100 / len(d_agent) / len(paths)
-        else:
-            d_obstacles.append(d_a_min)
+        d_obstacles.append(d_a_min)
     if collision:
-        return collision_value 
+        #return collision_value 
+        d_neg = [-d**2 for d in d_obstacles if d < 0]
+        return np.sum(d_neg)
     d_agents = np.array(d_obstacles) * 2
     for configuration in itertools.zip_longest(*paths):
         d_agents = np.min([d_agents, min_dist_per_agent(configuration)], axis=0)

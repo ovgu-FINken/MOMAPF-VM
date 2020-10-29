@@ -14,6 +14,7 @@ import time
 from multiprocessing import Pool, TimeoutError
 import multiprocessing
 import logging
+import itertools
 
 from enum import IntEnum
 from deap import base, creator, tools, algorithms
@@ -21,8 +22,10 @@ from deap import base, creator, tools, algorithms
 from problem import *
 from obstacle_map import *
 
+import argparse
 
-def hypervolume2(ref, df, objective_1="robustness", objective_2="flowtime"):
+
+def hypervolume2(ref, df, objective_1="robustness", objective_2="time"):
     x_last = ref[0]
     hv = 0
     for i, x in df.loc[df.non_dominated].sort_values(by=[objective_1], ascending=False).iterrows():
@@ -36,7 +39,17 @@ def hypervolume2(ref, df, objective_1="robustness", objective_2="flowtime"):
         x_last = x[objective_1]
     return hv
 
-
+def pdom(a, b, ndim=None):
+    aLTb = False
+    if ndim is None:
+        ndim = min(len(a), len(b))
+    for fa, fb in zip(a[:ndim], b[:ndim]):
+        if not fa <= fb :
+            return False
+        elif fa < fb:
+            aLTb = True
+    return aLTb
+    
 class JobStatus(IntEnum):
     TODO = 0
     IN_PROGRESS = 1
@@ -58,20 +71,31 @@ class Experiment:
         # deap setup
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0))
+            if self.settings["use_novelty"]:
+                creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0, -1.0, -1.0))
+            else:
+                creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0, -1.0))
+                
             creator.create("Individual", list, fitness=creator.FitnessMin)
         self.toolbox = base.Toolbox()
         self.toolbox.register("attr_pos", np.random.uniform, self.settings['domain'][0], self.settings['domain'][1])
         self.toolbox.register("attr_angle", np.random.uniform, 0, 2*np.pi)
-        self.toolbox.register("individual", tools.initCycle, creator.Individual,
-                              (self.toolbox.attr_pos, self.toolbox.attr_pos, self.toolbox.attr_angle),
-                              n=self.settings['n_agents'] * self.settings['n_waypoints']
-                             )
+        if self.settings['velocity_control']:
+            self.toolbox.register("attr_velocity", np.random.uniform, 0.5, 1.0)
+            self.toolbox.register("individual", tools.initCycle, creator.Individual,
+                                  (self.toolbox.attr_pos, self.toolbox.attr_pos, self.toolbox.attr_angle, self.toolbox.attr_velocity),
+                                  n=self.settings['n_agents'] * self.settings['n_waypoints']
+                                 )
+        else:
+            self.toolbox.register("individual", tools.initCycle, creator.Individual,
+                                  (self.toolbox.attr_pos, self.toolbox.attr_pos, self.toolbox.attr_angle),
+                                  n=self.settings['n_agents'] * self.settings['n_waypoints']
+                                 )
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
         #self.toolbox.register("evaluate", problem.evaluate_weighted_sum)
-        self.toolbox.register("evaluate", self.problem.evaluate)
+        self.toolbox.register("evaluate", self.problem.evaluate, k=self.settings["novelty_k"])
         self.toolbox.register("mate", self.problem.crossover)
-        self.toolbox.register("mutate", self.problem.all_mutations, p=self.settings['mutation_p'], sigma=self.settings['sigma'])
+        self.toolbox.register("mutate", self.problem.all_mutations, **self.settings["mutation_settings"])
         self.toolbox.register("select", tools.selNSGA2)
         
     def pop_to_df(self, population):
@@ -79,7 +103,7 @@ class Experiment:
         fronts = tools.sortNondominated(population, len(population))
         for i, front in enumerate(fronts):
             for j, ind in enumerate(front):
-                f = self.problem.evaluate(ind)
+                f = self.problem.evaluate(ind, pop=population)
                 feasible = "feasible"
                 if f[0] > self.settings['feasiblity_threshold']:
                     feasible = "infeasible"
@@ -88,18 +112,21 @@ class Experiment:
                     'non_dominated': i == 0,
                     'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
                     'individual': j,
-                    'value': json.dumps(ind),
                     'robustness' : f[0],
-                    'flowtime' : f[1],
-                    'makespan' : f[2],
+                    'time' : f[1],
+                    'length' : f[2],
                     'collision' : feasible,
                 }
+                try:
+                    i_data['value'] = json.dumps(ind),
+                except:
+                    print(ind)
                 data.append(i_data)
         return pd.DataFrame(data)
     
     
     def _hv_pop(self, pop):
-        return hypervolume2(self.settings["hv_ref"],self.pop_to_df(pop))
+        return hypervolume2(self.settings["hv_ref"], self.pop_to_df(pop))
 
     def run(self, verbose=False):
         # for compatibility
@@ -113,23 +140,39 @@ class Experiment:
         stats.register("max", np.max, axis=0)
 
         logbook = tools.Logbook()
-        logbook.header = "gen", "evals", "min", "max", "median", "hv", "walltime"
+        logbook.header = "gen", "evals", "min", "max", "median", "hv", "walltime", "len(archive)"
 
         pop = toolbox.population(n=settings['population_size'])
         pop = toolbox.select(pop, settings['population_size']) # for computing crowding distance
+        archive = []
+        ndim = 3
 
         for ind in pop:
             ind.fitness.values = toolbox.evaluate(ind)
+            
+            #archive insertion
+            dominated = False
+            for a in archive:
+                if pdom(ind.fitness.values, a.fitness.values, ndim=ndim):
+                    archive.remove(a)
+                elif pdom(a.fitness.values, ind.fitness.values, ndim=ndim):
+                    dominated = True
+                    break
+            if not dominated:
+                archive += [ind]
+
+        for ind in pop:
+            ind.fitness.values = toolbox.evaluate(ind, pop=archive)
+            
         record = stats.compile(pop)
         record["hv"] = self._hv_pop(pop)
         record["walltime"] = 0
+        record["len(archive)"] = len(archive)
         logbook.record(gen=0, evals=len(pop), **record)
         if verbose:
             print(logbook.stream)
-        for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
-            
         start_time = time.time()
+        
         for g in range(1, settings['n_gens']):
             # Select and clone the next generation individuals
             #offspring = toolbox.clone(pop)
@@ -141,26 +184,49 @@ class Experiment:
             # Apply crossover and mutation on the offspring
             for ind1, ind2 in zip(offspring[::2], offspring[1::2]):
                 change1, change2 = False, False
-                if np.random.rand() <= settings['cxpb']:
-                    toolbox.mate(ind1, ind2)
+                if np.random.rand() < settings['cxpb']:
+                    ind1, ind2 = toolbox.mate(ind1, ind2)
                     change1, change2 = True, True
                 
-                if not change1 or np.random.rand() <= settings['mutpb']:
+                if not change1 or np.random.rand() < settings['mutpb']:
                     change1 = True
                     toolbox.mutate(ind1)
-                if not change2 or np.random.rand() <= settings['mutpb']:
+                if not change2 or np.random.rand() < settings['mutpb']:
                     change2 = True
                     toolbox.mutate(ind2)
                 del ind1.fitness.values, ind2.fitness.values
                 assert(change1)
                 assert(change2)
-
-            pop = pop + offspring
+            
+            
+            #add new offspring to pop, that are not duplicates
+            for ind in offspring:
+                duplicate = False
+                for x in pop:
+                    if x == ind:
+                        duplicate = True
+                        break
+                if not duplicate:
+                    pop.append(ind)
+            
+            # fitness evaluation and archiving
             evals = 0
             for ind in pop:
                 if not ind.fitness.valid:
-                    ind.fitness.values = toolbox.evaluate(ind)
+                    ind.fitness.values = toolbox.evaluate(ind, pop=archive)
+                    #archive insertion
+                    dominated = False
+                    for a in archive:
+                        if pdom(ind.fitness.values, a.fitness.values, ndim=ndim):
+                            archive.remove(a)
+                        elif pdom(a.fitness.values, ind.fitness.values, ndim=ndim):
+                            dominated = True
+                            break
+                    if not dominated:
+                        archive += [ind]
                     evals += 1
+                else:
+                    ind.fitness.values = ind.fitness.values[0], ind.fitness.values[1], ind.fitness.values[2], toolbox.evaluate(ind, pop=pop, novelty_only=True)[3]
             pop_feasible = []
             pop_infeasible = []
             for ind in pop:
@@ -176,13 +242,16 @@ class Experiment:
                 record = stats.compile(pop)
                 record["hv"] = self._hv_pop(pop)
                 record["walltime"] = time.time() - start_time
+                record["len(archive)"] = len(archive)
                 logbook.record(gen=g, evals=evals, **record)
                 if verbose:
                     print(logbook.stream)
 
-        for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
-        return pop, logbook
+        for ind in archive:
+            ind.fitness.values = toolbox.evaluate(ind,pop=pop)
+        #recompute crowding distance
+        archive = toolbox.select(archive, len(archive))
+        return archive, logbook
     
 
 class ExperimentCoevolution:
@@ -221,7 +290,12 @@ class ExperimentCoevolution:
         fronts = tools.sortNondominated(population, len(population))
         for i, front in enumerate(fronts):
             for j, ind in enumerate(front):
-                f = self.problem.evaluate(ind)
+                f = None
+                if ind.fitness is None:
+                    f = self.problem.evaluate(ind)
+                else:
+                    f = ind.fitness.values
+                
                 feasible = "feasible"
                 if f[0] > self.settings['feasiblity_threshold']:
                     feasible = "infeasible"
@@ -230,12 +304,15 @@ class ExperimentCoevolution:
                     'non_dominated': i == 0,
                     'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
                     'individual': j,
-                    'value': json.dumps(ind),
                     'robustness' : f[0],
                     'flowtime' : f[1],
                     'makespan' : f[2],
                     'collision' : feasible,
                 }
+                try:
+                    i_data['value'] = json.dumps(ind)
+                except Exception as e:
+                    print(ind)
                 data.append(i_data)
         return pd.DataFrame(data)
     
@@ -260,7 +337,7 @@ class ExperimentCoevolution:
         sub_populations = [toolbox.population(n=10) for _ in range(self.settings["num_agents"])]
 
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
         record = stats.compile(pop)
         record["hv"] = self._hv_pop(pop)
         record["walltime"] = 0
@@ -268,7 +345,7 @@ class ExperimentCoevolution:
         if verbose:
             print(logbook.stream)
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
             
         start_time = time.time()
         for g in range(1, settings['n_gens']):
@@ -286,7 +363,7 @@ class ExperimentCoevolution:
                     print(logbook.stream)
 
         for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind)
+            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
         return pop, logbook
 
 def get_commit():
@@ -303,6 +380,7 @@ def logbook_to_df(logbook):
             "evals": evals,
             "hv": log["hv"],
             "walltime": log["walltime"],
+            "archive": log["len(archive)"]
         }
         for i, _ in enumerate(log['median']):
             data_i[f"f_{i}_median"] = log['median'][i]
@@ -344,8 +422,13 @@ class ExperimentRunner:
         #self.table_populations = sqlalchemy.Table('populations', self.metadata, autoload=True)
         #self.table_logs = sqlalchemy.Table('logs', self.metadata, autoload=True)
     
-    def fetch_job(self, verbose=False):
-        select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.status == JobStatus.TODO.value) | (self.table_jobs.c.status == JobStatus.FAILED.value))
+    def fetch_job(self, verbose=False, job_index:int=None):
+        select = None
+        if job_index is None:
+            select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.status == JobStatus.TODO.value) | (self.table_jobs.c.status == JobStatus.FAILED.value))
+        else:
+            select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.index == job_index) )
+            
         r = self.db.execute(select)
         row = r.fetchone()
         r.close()
@@ -375,7 +458,7 @@ class ExperimentRunner:
         self.db.execute(update).close()
         
     
-    def fetch_and_execute(self):
+    def fetch_and_execute(self, job_index=None):
         """fetch jobs with the TODO-status from the DB and run the experiment.
         
         1. Fetch Job
@@ -385,7 +468,7 @@ class ExperimentRunner:
         4. b) In case of exception set job-status to FAIL
         
         """
-        job = self.fetch_job()
+        job = self.fetch_job(job_index=job_index)
         if job is None:
             return False
         return self.execute_and_save(job)
@@ -615,9 +698,30 @@ def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file
     
     
 if __name__ == "__main__":
-    mpl = multiprocessing.log_to_stderr()
-    mpl.setLevel(logging.WARN)
-    engine = sqlalchemy.create_engine(get_key(filename="db.key"))
+    parser = argparse.ArgumentParser(description='Experiment Runner')
+    parser.add_argument("--db", type=str)
+    parser.add_argument("--multiprocessing", action='store_true')
+    parser.add_argument("--run", type=int, nargs='+')
+    parser.add_argument("--slurm", action="store_true")
+    args = parser.parse_args()
+    
+    key = "db.key"
+    if args.db:
+        key = args.db
+        
+    engine = sqlalchemy.create_engine(get_key(filename=key))
     runner = ExperimentRunner(engine)
-    runner.execute_pool(workers=65)
+    if args.run:
+        print(f"executing runs: {args.run}")
+        for i in args.run:
+            runner.fetch_and_execute(job_index=i)
+        
+    elif args.slurm:
+        print("slurm")
+    
+    elif args.multiprocessing:
+        print("multiprocessing.pool")
+        mpl = multiprocessing.log_to_stderr()
+        mpl.setLevel(logging.WARN)
+        runner.execute_pool(workers=65)
     
