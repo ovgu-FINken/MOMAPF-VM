@@ -55,6 +55,7 @@ class JobStatus(IntEnum):
     IN_PROGRESS = 1
     DONE = 2
     FAILED = 3
+    RESERVED = 4
     
 class Experiment:
     def __init__(self, settings):
@@ -422,7 +423,7 @@ class ExperimentRunner:
         #self.table_populations = sqlalchemy.Table('populations', self.metadata, autoload=True)
         #self.table_logs = sqlalchemy.Table('logs', self.metadata, autoload=True)
     
-    def fetch_job(self, verbose=False, job_index:int=None):
+    def fetch_job(self, verbose=False, job_index:int=None, reserve=False):
         select = None
         if job_index is None:
             select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.status == JobStatus.TODO.value) | (self.table_jobs.c.status == JobStatus.FAILED.value))
@@ -445,6 +446,14 @@ class ExperimentRunner:
         job['settings'] = json.loads(job['settings'])
         if verbose:
             print(f"fetched job: {job}")
+        if reserve:
+            set_job_status(self, job=job, status=JobStatus.RESERVED)
+            time.sleep(1.0)
+            db_job = self.fetch_job(verbose=verbose, job_index=job['index'], reserve=False)
+            if db_job['pid'] == os.getpid():
+                return job
+            else:
+                return self.fetch_job(verbose=verbose, reserve=True, job_index=job_index)
         return job
 
     def set_job_status(self, job=None, status=None, time=0):
@@ -468,7 +477,8 @@ class ExperimentRunner:
         4. b) In case of exception set job-status to FAIL
         
         """
-        job = self.fetch_job(job_index=job_index)
+        reserve = (job_index is None)
+        job = self.fetch_job(job_index=job_index, reserve=reserve)
         if job is None:
             return False
         return self.execute_and_save(job)
@@ -714,7 +724,7 @@ if __name__ == "__main__":
     if args.run:
         print(f"executing runs: {args.run}")
         for i in args.run:
-            runner.fetch_and_execute(job_index=i)
+            runner.netch_and_execute(job_index=i)
         
     elif args.slurm:
         print("slurm")
