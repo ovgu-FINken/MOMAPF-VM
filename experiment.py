@@ -444,16 +444,19 @@ class ExperimentRunner:
         for col in self.table_jobs.columns.keys():
             job[str(col)] = row[col]
         job['settings'] = json.loads(job['settings'])
-        if verbose:
-            print(f"fetched job: {job}")
         if reserve:
-            set_job_status(self, job=job, status=JobStatus.RESERVED)
+            self.set_job_status(job=job, status=JobStatus.RESERVED)
             time.sleep(1.0)
             db_job = self.fetch_job(verbose=verbose, job_index=job['index'], reserve=False)
             if db_job['pid'] == os.getpid():
+                if verbose:
+                    print(f"fetched job: {job}")
                 return job
             else:
+                time.sleep(np.random.rand())
                 return self.fetch_job(verbose=verbose, reserve=True, job_index=job_index)
+        if verbose:
+            print(f"fetched job: {job}")
         return job
 
     def set_job_status(self, job=None, status=None, time=0):
@@ -509,7 +512,7 @@ class ExperimentRunner:
             print("entering worker loop")
             try:
                 while True:
-                    job = self.fetch_job()
+                    job = self.fetch_job(reserve=True)
                     if job is not None and len(handles.keys()) < workers:
                         self.set_job_status(job, status=JobStatus.IN_PROGRESS)
                         jobs[job['index']] = job
@@ -728,7 +731,7 @@ if __name__ == "__main__":
         
     elif args.fetch:
         print("fetch-job and execute")
-        job = runner.fetch_job(engine)
+        job = runner.fetch_job(engine, reserve=True)
         print(f"execute job: {job['index']}")
         runner.fetch_and_execute(job_index=job['index'])
         print("... done.")
