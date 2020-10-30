@@ -486,7 +486,7 @@ class ExperimentRunner:
         try:
             res = execute_job(job)
             # save results
-            save_results(res, job)
+            self.save_results(res, job)
         except:
             self.set_job_status(job, status=JobStatus.FAILED)
             raise
@@ -702,7 +702,7 @@ if __name__ == "__main__":
     parser.add_argument("--db", type=str)
     parser.add_argument("--multiprocessing", action='store_true')
     parser.add_argument("--run", type=int, nargs='+')
-    parser.add_argument("--slurm", action="store_true")
+    parser.add_argument("--fetch", action="store_true")
     args = parser.parse_args()
     
     key = "db.key"
@@ -716,12 +716,16 @@ if __name__ == "__main__":
         for i in args.run:
             runner.fetch_and_execute(job_index=i)
         
-    elif args.slurm:
-        print("slurm")
+    elif args.fetch:
+        print("fetch-job and execute")
+        job = runner.fetch_job(engine)
+        print(f"execute job: {job['index']}")
+        runner.fetch_and_execute(job_index=job['index'])
+        print("... done.")
     
     elif args.multiprocessing:
         print("multiprocessing.pool")
         mpl = multiprocessing.log_to_stderr()
         mpl.setLevel(logging.WARN)
-        runner.execute_pool(workers=65)
+        runner.execute_pool(workers=2)
     
