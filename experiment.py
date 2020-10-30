@@ -13,6 +13,7 @@ import os
 import time
 from multiprocessing import Pool, TimeoutError
 import multiprocessing
+import subprocess
 import logging
 import itertools
 
@@ -727,7 +728,7 @@ if __name__ == "__main__":
     if args.run:
         print(f"executing runs: {args.run}")
         for i in args.run:
-            runner.netch_and_execute(job_index=i)
+            runner.fetch_and_execute(job_index=i)
         
     elif args.fetch:
         print("fetch-job and execute")
