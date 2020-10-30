@@ -716,6 +716,7 @@ if __name__ == "__main__":
     parser.add_argument("--multiprocessing", action='store_true')
     parser.add_argument("--run", type=int, nargs='+')
     parser.add_argument("--fetch", action="store_true")
+    parser.add_argemunt("--slurm", action="store_true")
     args = parser.parse_args()
     
     key = "db.key"
@@ -741,4 +742,10 @@ if __name__ == "__main__":
         mpl = multiprocessing.log_to_stderr()
         mpl.setLevel(logging.WARN)
         runner.execute_pool(workers=2)
+        
+    elif args.slurm:
+        job = runner.fetch_job(reserve=True)
+        for i in range(100):
+            subprocess.run(['sbatch', '-n', 1, './job.bash', '--run', job['index']])
+        
     
