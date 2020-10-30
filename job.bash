@@ -1,6 +1,7 @@
 #!/bin/bash
+ARGS="$1 $2"
 cd /home/semai/Software/dubins
-echo $(pwd)
+echo $ARGS
 source bin/activate
-python experiment.py --fetch
+python experiment.py $ARGS
 deactivate
