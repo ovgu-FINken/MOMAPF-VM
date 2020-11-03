@@ -123,6 +123,7 @@ class Experiment:
                     i_data['value'] = json.dumps(ind),
                 except:
                     print(ind)
+                    raise
                 data.append(i_data)
         return pd.DataFrame(data)
     
@@ -307,14 +308,15 @@ class ExperimentCoevolution:
                     'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
                     'individual': j,
                     'robustness' : f[0],
-                    'flowtime' : f[1],
-                    'makespan' : f[2],
+                    'time' : f[1],
+                    'length' : f[2],
                     'collision' : feasible,
                 }
                 try:
                     i_data['value'] = json.dumps(ind)
                 except Exception as e:
                     print(ind)
+                    raise e
                 data.append(i_data)
         return pd.DataFrame(data)
     
@@ -446,8 +448,9 @@ class ExperimentRunner:
             job[str(col)] = row[col]
         job['settings'] = json.loads(job['settings'])
         if reserve:
+            print(f"reserve: {job['index']}")
             self.set_job_status(job=job, status=JobStatus.RESERVED)
-            time.sleep(1.0)
+            time.sleep(0.3)
             db_job = self.fetch_job(verbose=verbose, job_index=job['index'], reserve=False)
             if db_job['pid'] == os.getpid():
                 if verbose:
@@ -485,8 +488,14 @@ class ExperimentRunner:
         job = self.fetch_job(job_index=job_index, reserve=reserve)
         if job is None:
             return False
-        return self.execute_and_save(job)
-
+        try:
+            print(f"executing: {job['index']}")
+            return self.execute_and_save(job)
+        except Exception as ex:
+            print(ex)
+            self.set_job_status(job=job, status=JobStatus.FAILED)
+            raise
+        
     def save_results(self, res, job):
         pop, log, job_time = res
         self.save_population(pop, job=job)
@@ -494,7 +503,6 @@ class ExperimentRunner:
         self.set_job_status(job, status=JobStatus.DONE, time=job_time)
 
     def execute_and_save(self, job):
-        # TODO: check if job is taken by other process after updating table
         print(f"excuting job {job['index']}")
         self.set_job_status(job, status=JobStatus.IN_PROGRESS)
         try:
@@ -535,6 +543,7 @@ class ExperimentRunner:
                                     print(v.get())
                                 except:
                                     pass
+
 
                     for k in completed:
                         del handles[k]
@@ -628,7 +637,7 @@ def jobs(db):
     return df_jobs
     
     
-def compute_combined_front2(df, o1="robustness", o2="flowtime", colname=None, groups=None, experiments=None):
+def compute_combined_front2(df, o1="robustness", o2="time", o3="length", colname=None, groups=None, experiments=None, ndim=3):
     if colname is None:
         colname = "combined_front"
     if groups is None:
@@ -638,6 +647,7 @@ def compute_combined_front2(df, o1="robustness", o2="flowtime", colname=None, gr
     df.loc[df.group.isin(groups)&df.experiment.isin(experiments),colname] = False
     last_o1 = np.inf
     best_o2 = np.inf
+    best_o3 = np.inf
     for i, x in df.loc[df.non_dominated&df.group.isin(groups)&df.experiment.isin(experiments)].sort_values(by=[o1,o2], ascending=[True, True]).iterrows():
         if last_o1 == x[o1] and x[o2] != best_o2:
             continue
@@ -667,12 +677,6 @@ def read_experiment(db, experiment=None, verbose=False):
         for exp in df_pop["experiment"].unique():
             ji = df_pop.loc[df_pop["experiment"] == exp, "job_index"].values[0]
             settings = fetch_settings(df_jobs, job_index=ji)
-            settings["mutp_0"] = settings["mutation_p"][0]
-            settings["mutp_1"] = settings["mutation_p"][1]
-            settings["mutp_2"] = settings["mutation_p"][2]
-            if len(settings["mutation_p"]) > 3:
-                settings["mutp_3"] = settings["mutation_p"][3]
-            
             settings["experiment"] = exp
             data.append(settings)
         df = pd.DataFrame(data)
@@ -714,10 +718,11 @@ def plot_indivdual(row, df_jobs=None, plot=True, animation=False, animation_file
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Experiment Runner')
     parser.add_argument("--db", type=str)
-    parser.add_argument("--multiprocessing", action='store_true')
+    parser.add_argument("--multiprocessing", type=int)
     parser.add_argument("--run", type=int, nargs='+')
     parser.add_argument("--fetch", action="store_true")
     parser.add_argument("--slurm", action="store_true")
+    parser.add_argument("--loop", action="store_true")
     args = parser.parse_args()
     
     key = "db.key"
@@ -732,17 +737,18 @@ if __name__ == "__main__":
             runner.fetch_and_execute(job_index=i)
         
     elif args.fetch:
-        print("fetch-job and execute")
-        job = runner.fetch_job(engine, reserve=True)
-        print(f"execute job: {job['index']}")
-        runner.fetch_and_execute(job_index=job['index'])
+        runner.fetch_and_execute()
         print("... done.")
+        if args.loop:
+            while True:
+                runner.fetch_and_execute()
+                print("... done.")
     
     elif args.multiprocessing:
         print("multiprocessing.pool")
         mpl = multiprocessing.log_to_stderr()
         mpl.setLevel(logging.WARN)
-        runner.execute_pool(workers=2)
+        runner.execute_pool(workers=args.multiprocessing)
         
     elif args.slurm:
         for i in range(100):

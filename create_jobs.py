@@ -30,7 +30,7 @@ if __name__=="__main__":
         'min_speed' : 0.2, 
         'n_agents': 7, # number of agents
         'n_waypoints': 3, # waypoints per agent (excluding start and end)
-        'n_gens': 200, # number of generations to run the algorithm
+        'n_gens': 500, # number of generations to run the algorithm
         'population_size': 64, # population size for the algorithm, shoulod be divisible by 4 for nsga2
         'cxpb': .4, # crossover probablity
         'mutpb': 0.8, # mutation rate (not applicable in nsga2)
