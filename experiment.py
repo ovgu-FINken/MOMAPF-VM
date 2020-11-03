@@ -25,6 +25,13 @@ from obstacle_map import *
 
 import argparse
 
+try:
+    # try importing the C version
+    from deap.tools._hypervolume import hv as hv
+except ImportError:
+    # fallback on python version
+    from deap.tools._hypervolume import pyhv as hv
+
 
 def hypervolume2(ref, df, objective_1="robustness", objective_2="time"):
     x_last = ref[0]
@@ -39,6 +46,15 @@ def hypervolume2(ref, df, objective_1="robustness", objective_2="time"):
         hv += delta_f1 * delta_f2
         x_last = x[objective_1]
     return hv
+
+def hypervolume(ref, df, toolbox, objectives=("robustness", "time", "length")):
+    pointset = []
+    for _, row in df.loc[df.feasible].iterrows():
+        objective_values = tuple( (row[o] for o in objectives) )
+        pointset.append(objective_values)
+    if len(pointset) == 0:
+        return 0
+    return hv.hypervolume(pointset, ref)
 
 def pdom(a, b, ndim=None):
     aLTb = False
@@ -100,35 +116,31 @@ class Experiment:
         self.toolbox.register("mutate", self.problem.all_mutations, **self.settings["mutation_settings"])
         self.toolbox.register("select", tools.selNSGA2)
         
-    def pop_to_df(self, population):
+    def pop_to_df(self, population, evaluate=True):
         data = []
-        fronts = tools.sortNondominated(population, len(population))
-        for i, front in enumerate(fronts):
-            for j, ind in enumerate(front):
+        for i, ind in enumerate(population):
+            f = None
+            if evaluate:
                 f = self.problem.evaluate(ind, pop=population)
-                feasible = "feasible"
-                if f[0] > self.settings['feasiblity_threshold']:
-                    feasible = "infeasible"
-                i_data = {
-                    'front' : i,
-                    'non_dominated': i == 0,
-                    'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
-                    'individual': j,
-                    'robustness' : f[0],
-                    'time' : f[1],
-                    'length' : f[2],
-                    'collision' : feasible,
-                }
-                try:
-                    i_data['value'] = json.dumps(ind),
-                except:
-                    print(ind)
-                data.append(i_data)
+            else:
+                f = ind.fitness.values[0:3]
+            i_data = {
+                'individual': i,
+                'robustness' : f[0],
+                'time' : f[1],
+                'length' : f[2],
+                'feasible' : f[0] < self.settings['feasiblity_threshold'],
+            }
+            try:
+                i_data['value'] = json.dumps(ind),
+            except:
+                print(ind)
+            data.append(i_data)
         return pd.DataFrame(data)
     
     
-    def _hv_pop(self, pop):
-        return hypervolume2(self.settings["hv_ref"], self.pop_to_df(pop))
+    def _hv_df(self, df):
+        return hypervolume(self.settings["hv_ref"], df, self.toolbox)
 
     def run(self, verbose=False):
         # for compatibility
@@ -167,7 +179,10 @@ class Experiment:
             ind.fitness.values = toolbox.evaluate(ind, pop=archive)
             
         record = stats.compile(pop)
-        record["hv"] = self._hv_pop(pop)
+        if len(archive) > 0:
+            record["hv"] = self._hv_df(self.pop_to_df(archive, evaluate=False))
+        else:
+            record["hv"] = 0
         record["walltime"] = 0
         record["len(archive)"] = len(archive)
         logbook.record(gen=0, evals=len(pop), **record)
@@ -242,7 +257,10 @@ class Experiment:
             pop = toolbox.select(pop_feasible, settings['population_size'])
             if g % 10 == 0 or verbose:
                 record = stats.compile(pop)
-                record["hv"] = self._hv_pop(pop)
+                if len(archive) > 0:
+                    record["hv"] = self._hv_df(self.pop_to_df(archive, evaluate=False))
+                else:
+                    record["hv"] = 0
                 record["walltime"] = time.time() - start_time
                 record["len(archive)"] = len(archive)
                 logbook.record(gen=g, evals=evals, **record)
@@ -256,117 +274,6 @@ class Experiment:
         return archive, logbook
     
 
-class ExperimentCoevolution:
-    def __init__(self, settings):
-        self.settings = settings
-    
-    def seed(self, seed):
-        random.seed(seed)
-        np.random.seed(random.randint(0, 2**32-1))
-        
-    def setup(self):
-        obstacles = ObstacleMap(filename=self.settings['map_name'])
-        self.problem = DubinsMOMAPF(obstacles=obstacles, **self.settings)
-        
-        # deap setup
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            creator.create("FitnessMin", base.Fitness, weights=(-1.0, -1.0))
-            creator.create("Individual", list, fitness=creator.FitnessMin)
-        self.toolbox = base.Toolbox()
-        self.toolbox.register("attr_pos", np.random.uniform, self.settings['domain'][0], self.settings['domain'][1])
-        self.toolbox.register("attr_angle", np.random.uniform, 0, 2*np.pi)
-        self.toolbox.register("individual", tools.initCycle, creator.Individual,
-                              (self.toolbox.attr_pos, self.toolbox.attr_pos, self.toolbox.attr_angle),
-                              n=self.settings['n_agents'] * self.settings['n_waypoints']
-                             )
-        self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
-        #self.toolbox.register("evaluate", problem.evaluate_weighted_sum)
-        self.toolbox.register("evaluate", self.problem.evaluate)
-        self.toolbox.register("mate", self.problem.crossover)
-        self.toolbox.register("mutate", self.problem.all_mutations, p=self.settings['mutation_p'], sigma=self.settings['sigma'])
-        self.toolbox.register("select", tools.selNSGA2)
-        
-    def pop_to_df(self, population):
-        data = []
-        fronts = tools.sortNondominated(population, len(population))
-        for i, front in enumerate(fronts):
-            for j, ind in enumerate(front):
-                f = None
-                if ind.fitness is None:
-                    f = self.problem.evaluate(ind)
-                else:
-                    f = ind.fitness.values
-                
-                feasible = "feasible"
-                if f[0] > self.settings['feasiblity_threshold']:
-                    feasible = "infeasible"
-                i_data = {
-                    'front' : i,
-                    'non_dominated': i == 0,
-                    'crowding_distance': np.min([2, ind.fitness.crowding_dist]),
-                    'individual': j,
-                    'robustness' : f[0],
-                    'flowtime' : f[1],
-                    'makespan' : f[2],
-                    'collision' : feasible,
-                }
-                try:
-                    i_data['value'] = json.dumps(ind)
-                except Exception as e:
-                    print(ind)
-                data.append(i_data)
-        return pd.DataFrame(data)
-    
-    
-    def _hv_pop(self, pop):
-        return hypervolume2(self.settings["hv_ref"],self.pop_to_df(pop))
-
-    def run(self, verbose=False):
-        settings = self.settings
-        toolbox = self.toolbox
-        
-        stats = tools.Statistics(lambda ind: ind.fitness.values)
-        stats.register("median", np.median, axis=0)
-        # stats.register("std", np.std, axis=0)
-        stats.register("min", np.min, axis=0)
-        stats.register("max", np.max, axis=0)
-
-        logbook = tools.Logbook()
-        logbook.header = "gen", "evals", "min", "max", "median", "hv", "walltime"
-
-        pop = toolbox.population(n=1)
-        sub_populations = [toolbox.population(n=10) for _ in range(self.settings["num_agents"])]
-
-        for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
-        record = stats.compile(pop)
-        record["hv"] = self._hv_pop(pop)
-        record["walltime"] = 0
-        logbook.record(gen=0, evals=len(pop), **record)
-        if verbose:
-            print(logbook.stream)
-        for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
-            
-        start_time = time.time()
-        for g in range(1, settings['n_gens']):
-            for agent in range(sub_populations):
-                pass
-            
-            
-
-            if g % 10 == 0 or verbose:
-                record = stats.compile(pop)
-                record["hv"] = self._hv_pop(pop)
-                record["walltime"] = time.time() - start_time
-                logbook.record(gen=g, evals=evals, **record)
-                if verbose:
-                    print(logbook.stream)
-
-        for ind in pop:
-            ind.fitness.values = toolbox.evaluate(ind, pop=pop)
-        return pop, logbook
 
 def get_commit():
     repo = git.Repo(search_parent_directories=True)
