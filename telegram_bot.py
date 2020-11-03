@@ -168,7 +168,7 @@ class TBot:
         if plot_args.model is not None:
             models = [plot_args.model]
         
-        rp = sns.relplot(data=df_pop.loc[df_pop.non_dominated & df_pop.group.isin(groups) & df_pop.experiment.isin(experiments) & df_pop.model.isin(models)],
+        rp = sns.relplot(data=df_pop.loc[df_pop.group.isin(groups) & df_pop.experiment.isin(experiments) & df_pop.model.isin(models)],
                         x=plot_args.x,
                         y=plot_args.y,
                         hue=plot_args.hue,

@@ -556,8 +556,8 @@ def compute_combined_front(df, objectives=("robustness", "time", "length"), coln
             ti = tuple( (ind[o] for o in objectives) )
             tj = tuple( (a[o] for o in objectives) )
             if pdom(ti, tj):
-                df[j][colname] = False
-                df[i][colname] = True
+                df[j, colname] = False
+                df[i, colname] = True
             if pdom(tj, ti):
                 continue
     return df

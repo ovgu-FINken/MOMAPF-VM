@@ -40,11 +40,11 @@ if __name__=="__main__":
         'offset': (0, 0), # offset of the map to the agents
         'map_name': "obstacles/gaps_3_easy_60.npy", # name of the obstacle-map file
         'metric': Metric.MIN, # metric to use in fitness calculation
-        'hv_ref': (100, 600), # reference for hyper volume
+        'hv_ref': (100, 800, 400), # reference for hyper volume
         'velocity_control': True, # turn on velocity control (4th dimension on wp)
         'novelty_k': 5, # k for knn- in novelty objective
-        'use_novelty': True,
-        'configuration': 'circle',
+        'use_novelty': False,
+        'configuration': 'line',
     }
     job_settings = {
         "delete" : False,
@@ -62,7 +62,7 @@ if __name__=="__main__":
     j["runs"] = 11
     j["delete"] = True
     s["n_gens"] = 50
-    s["population_size"] = 16
+    s["population_size"] = 32
     add_jobs_to_db(s, **j)
     
     labyrinth = [95, 100, 105, 120]
@@ -71,6 +71,18 @@ if __name__=="__main__":
     for i in labyrinth:
         for j in gaps:
             envs = envs + [f"obstacles/gaps_{j}_medium_{i}.npy"]
+
+    s = settings.copy()
+    j = job_settings.copy()
+    j["group"] = "circle"
+    s['configuration'] = 'circle'
+    s['map_name'] = 'obstacles/empty.npy'
+    for a in [3, 5, 7]:
+        for b in [2, 3, 5]:
+            s["n_agents"] = a
+            s["n_waypoints"] = b
+            j["experiment"] = f"circle_{a}_{b}"
+            add_jobs_for_each_model(s.copy(), **j.copy())
     
     s = settings.copy()
     j = job_settings.copy()
@@ -84,6 +96,7 @@ if __name__=="__main__":
                 j["experiment"] = f"{env}_{a}_{b}"
                 add_jobs_for_each_model(s.copy(), **j.copy())
 
+
     s = settings.copy()
     s['use_novelty'] = True
     j = job_settings.copy()
@@ -96,3 +109,16 @@ if __name__=="__main__":
                 s["map_name"] = env
                 j["experiment"] = f"nov_{env}_{a}_{b}"
                 add_jobs_for_each_model(s.copy(), **j.copy())
+
+    s = settings.copy()
+    j = job_settings.copy()
+    j["group"] = "nov_circle"
+    s['use_novelty'] = True
+    s['configuration'] = 'circle'
+    s['map_name'] = 'obstacles/empty.npy'
+    for a in [3, 5, 7]:
+        for b in [2, 3, 5]:
+            s["n_agents"] = a
+            s["n_waypoints"] = b
+            j["experiment"] = f"nov_circle_{a}_{b}"
+            add_jobs_for_each_model(s.copy(), **j.copy())
