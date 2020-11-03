@@ -57,6 +57,7 @@ def hypervolume(ref, df, toolbox, objectives=("robustness", "time", "length")):
     return hv.hypervolume(pointset, ref)
 
 def pdom(a, b, ndim=None):
+    """return True if a dominates b (minimization) """
     aLTb = False
     if ndim is None:
         ndim = min(len(a), len(b))
@@ -541,7 +542,7 @@ def jobs(db):
     return df_jobs
     
     
-def compute_combined_front2(df, o1="robustness", o2="time", o3="length", colname=None, groups=None, experiments=None, ndim=3):
+def compute_combined_front(df, objectives=("robustness", "time", "length"), colname=None, groups=None, experiments=None):
     if colname is None:
         colname = "combined_front"
     if groups is None:
@@ -549,16 +550,16 @@ def compute_combined_front2(df, o1="robustness", o2="time", o3="length", colname
     if experiments is None:
         experiments = df["experiment"].unique()
     df.loc[df.group.isin(groups)&df.experiment.isin(experiments),colname] = False
-    last_o1 = np.inf
-    best_o2 = np.inf
-    best_o3 = np.inf
-    for i, x in df.loc[df.non_dominated&df.group.isin(groups)&df.experiment.isin(experiments)].sort_values(by=[o1,o2], ascending=[True, True]).iterrows():
-        if last_o1 == x[o1] and x[o2] != best_o2:
-            continue
-        last_o1 = x[o1]
-        if x[o2] <= best_o2:
-            best_o2 = x[o2]
-            df.loc[i,colname] = True
+    inds = df.loc[df.group.isin(groups)&df.experiment.isin(experiments)]
+    for i, ind in inds.iterrows():
+        for j, a in df.loc[df.group.isin(groups) & df.experiment.isin(experiments) & df[colname]]:
+            ti = tuple( (ind[o] for o in objectives) )
+            tj = tuple( (a[o] for o in objectives) )
+            if pdom(ti, tj):
+                df[j][colname] = False
+                df[i][colname] = True
+            if pdom(tj, ti):
+                continue
     return df
 
 
@@ -587,9 +588,9 @@ def read_experiment(db, experiment=None, verbose=False):
         df_pop = df_pop.join(df.set_index("experiment"), on="experiment")
         df_stats = df_stats.join(df.set_index("experiment"), on="experiment")
         for group in df_pop["group"].unique():
-            compute_combined_front2(df_pop, colname="group_front", groups=[group])
+            compute_combined_front(df_pop, colname="group_front", groups=[group])
         for exp in df_pop["experiment"].unique():
-            compute_combined_front2(df_pop,colname="experiment_front", experiments=[exp])
+            compute_combined_front(df_pop,colname="experiment_front", experiments=[exp])
     return df_pop, df_stats
 
 def fetch_settings(df_jobs, job_index=None):
