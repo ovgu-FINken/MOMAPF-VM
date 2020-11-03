@@ -552,7 +552,7 @@ def compute_combined_front2(df, o1="robustness", o2="time", o3="length", colname
     last_o1 = np.inf
     best_o2 = np.inf
     best_o3 = np.inf
-    for i, x in df.loc[df.non_dominated&df.group.isin(groups)&df.experiment.isin(experiments)].sort_values(by=[o1,o2], ascending=[True, True]).iterrows():
+    for i, x in df.loc[df.group.isin(groups)&df.experiment.isin(experiments)].sort_values(by=[o1,o2], ascending=[True, True]).iterrows():
         if last_o1 == x[o1] and x[o2] != best_o2:
             continue
         last_o1 = x[o1]
