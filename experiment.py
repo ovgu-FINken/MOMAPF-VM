@@ -552,7 +552,7 @@ def compute_combined_front(df, objectives=("robustness", "time", "length"), coln
     df.loc[df.group.isin(groups)&df.experiment.isin(experiments),colname] = False
     inds = df.loc[df.group.isin(groups)&df.experiment.isin(experiments)]
     for i, ind in inds.iterrows():
-        for j, a in df.loc[df.group.isin(groups) & df.experiment.isin(experiments) & df[colname]]:
+        for j, a in df.loc[df.group.isin(groups) & df.experiment.isin(experiments) & df[colname]].iterrows():
             ti = tuple( (ind[o] for o in objectives) )
             tj = tuple( (a[o] for o in objectives) )
             if pdom(ti, tj):

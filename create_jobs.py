@@ -63,6 +63,7 @@ if __name__=="__main__":
     j["delete"] = True
     s["n_gens"] = 50
     s["population_size"] = 32
+    s["use_novelty"] = True
     add_jobs_to_db(s, **j)
     
     labyrinth = [95, 100, 105, 120]
