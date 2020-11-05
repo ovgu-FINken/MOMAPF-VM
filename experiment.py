@@ -16,6 +16,7 @@ import multiprocessing
 import subprocess
 import logging
 import itertools
+import sys
 
 from enum import IntEnum
 from deap import base, creator, tools, algorithms
@@ -331,6 +332,19 @@ class ExperimentRunner:
         #self.table_populations = sqlalchemy.Table('populations', self.metadata, autoload=True)
         #self.table_logs = sqlalchemy.Table('logs', self.metadata, autoload=True)
     
+    def reset_running_jobs(self):
+        """ set job status of all jobs with status RUNNING or RESERVED to FAILED """
+        select = sqlalchemy.sql.select([self.table_jobs]).where( (self.table_jobs.c.status == JobStatus.IN_PROGRESS.value) | (self.table_jobs.c.status == JobStatus.RESERVED.value))
+            
+        r = self.db.execute(select)
+        rows = r.fetchall()
+        r.close()
+        for row in rows:
+            job = {}
+            for col in self.table_jobs.columns.keys():
+                job[str(col)] = row[col]
+            self.set_job_status(job=job, status=JobStatus.FAILED)
+    
     def fetch_job(self, verbose=False, job_index:int=None, reserve=False):
         select = None
         if job_index is None:
@@ -399,7 +413,7 @@ class ExperimentRunner:
         except Exception as ex:
             print(ex)
             self.set_job_status(job=job, status=JobStatus.FAILED)
-            raise
+            sys.exit(1)
         
     def save_results(self, res, job):
         pop, log, job_time = res
@@ -416,7 +430,7 @@ class ExperimentRunner:
             self.save_results(res, job)
         except:
             self.set_job_status(job, status=JobStatus.FAILED)
-            raise
+            sys.exit(1)
         return True
     
     def execute_pool(self, workers=2):
@@ -457,7 +471,7 @@ class ExperimentRunner:
             except:
                 for k, v in jobs.items():
                     self.set_job_status(v, status=JobStatus.FAILED)
-                raise
+                sys.exit(1)
         return True
 
 
@@ -550,16 +564,32 @@ def compute_combined_front(df, objectives=("robustness", "time", "length"), coln
     if experiments is None:
         experiments = df["experiment"].unique()
     df.loc[df.group.isin(groups)&df.experiment.isin(experiments),colname] = False
-    inds = df.loc[df.group.isin(groups)&df.experiment.isin(experiments)]
-    for i, ind in inds.iterrows():
-        for j, a in df.loc[df.group.isin(groups) & df.experiment.isin(experiments) & df[colname]].iterrows():
-            ti = tuple( (ind[o] for o in objectives) )
-            tj = tuple( (a[o] for o in objectives) )
-            if pdom(ti, tj):
-                df[j, colname] = False
-                df[i, colname] = True
-            if pdom(tj, ti):
+    view = df.loc[df.group.isin(groups)&df.experiment.isin(experiments)]
+    
+    l = []
+    for i, ind in view.iterrows():
+        l.append((i, tuple([ind[o] for o in objectives])))
+    
+    print(len(l))
+    a = set()
+    for i in l:
+        non_dom = True
+        remove = set()
+        for j in a:
+            if pdom(i[1], j[1]):
+                remove.add(j)
                 continue
+            if pdom(j[1], i[1]):
+                non_dom = False
+                break
+        a -= remove
+        if non_dom:
+            a.add(i)
+    print(len(a))
+    
+    colnr = df.columns.get_loc(colname)
+    df.iloc[[i[0] for i in a], colnr] = True
+        
     return df
 
 
@@ -574,7 +604,10 @@ def read_table(table, experiment=None, con=None):
 
 def read_experiment(db, experiment=None, verbose=False):
     df_pop = read_table("populations", con=db, experiment=experiment)
+    print("finished reading populations")
     df_stats = read_table("logbooks", con=db, experiment=experiment)
+    print("finished reading logbooks")
+    
     
     if verbose:
         data = []
@@ -587,10 +620,12 @@ def read_experiment(db, experiment=None, verbose=False):
         df = pd.DataFrame(data)
         df_pop = df_pop.join(df.set_index("experiment"), on="experiment")
         df_stats = df_stats.join(df.set_index("experiment"), on="experiment")
-        for group in df_pop["group"].unique():
-            compute_combined_front(df_pop, colname="group_front", groups=[group])
+        #for group in df_pop["group"].unique():
+        #    compute_combined_front(df_pop, colname="group_front", groups=[group])
+        print("finished reading settings")
         for exp in df_pop["experiment"].unique():
             compute_combined_front(df_pop,colname="experiment_front", experiments=[exp])
+            print(f"finished computing front for {exp}")
     return df_pop, df_stats
 
 def fetch_settings(df_jobs, job_index=None):
@@ -628,6 +663,7 @@ if __name__ == "__main__":
     parser.add_argument("--fetch", action="store_true")
     parser.add_argument("--slurm", action="store_true")
     parser.add_argument("--loop", action="store_true")
+    parser.add_argument("--reset", action="store_true")
     args = parser.parse_args()
     
     key = "db.key"
@@ -659,5 +695,8 @@ if __name__ == "__main__":
         for i in range(100):
             job = runner.fetch_job(reserve=True)
             subprocess.Popen(f"srun -n 1 ./job.bash --run {job['index']}".split(" "), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    
+    elif args.reset:
+        runner.reset_running_jobs()
         
     
