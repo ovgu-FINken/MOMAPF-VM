@@ -1,14 +1,36 @@
 import numpy as np
 import seaborn as sns
 import pandas as pd
+from skimage import io, segmentation
+from scipy.ndimage import gaussian_filter
+import yaml
 
 class ObstacleMap:
-    def __init__(self, size=(200, 200), offset=(0, 0), value=None, filename=None):
-        if filename is not None:
-            value = np.load(filename)
+    def __init__(self, size=(200, 200), offset=(0, 0), value=None, filename=None, scale=1.0):
+        
         self.size = size
         self.offset = offset
-        self.cmap = sns.cubehelix_palette(dark=0, light=1, rot=-.1, gamma=.25, reverse=True, as_cmap=True)
+        self.scale = scale
+        if filename is not None:
+            if filename[-3:] == 'pgm':
+                value = io.imread(filename, as_gray=True)
+                value[value < 210] = 0.0
+                value[value >= 210] = 100.0
+                value = 100.0 - value
+                info_file = filename[:-3] + 'yaml'
+                with open(info_file, 'r') as stream:
+                    info = yaml.safe_load(stream)
+                
+                value = segmentation.expand_labels(value, distance=0.15  / info['resolution'])
+                value = gaussian_filter(value, 5)
+                value = np.mean(value)-value
+                self.info = info
+                self.scale = info['resolution']
+                self.origin = info['origin'][:2]
+  
+            else:
+                value = np.load(filename)
+        self.cmap = sns.cubehelix_palette(dark=0, light=1, reverse=True, rot=-.1, gamma=.25, as_cmap=True)
         if value is not None:
             self._map = value
             self.size = value.shape
@@ -52,7 +74,7 @@ class ObstacleMap:
     
     def heatmap(self, plot_range=None):
         if plot_range is None:
-            plot_range = np.arange(0 + offset[0], self._map.shape[0] + offset[0])
+            plot_range = np.arange(0, self._map.shape[0])
         data = []
         for i in plot_range:
             for j in plot_range:
@@ -70,6 +92,11 @@ class ObstacleMap:
     
     def save(self, filename):
         np.save(filename, self._map)
+        
+    def metric_to_px_coordinates(self, x, y, theta):
+        x = (x - self.origin[0] ) / self.scale
+        y = (y - self.origin[1] ) / self.scale
+        return x, y, theta
         
 def save_labyrinth(bar_length, difficulty="hard"):
     print(f"creating: obstacles/labyrinth_{difficulty}_{bar_length}")

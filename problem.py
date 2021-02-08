@@ -3,6 +3,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib import animation
+import yaml
 
 from path import *
 
@@ -62,26 +63,45 @@ def gauss_mut(x, sigma=0.1, lower=0.0, upper=1.0, **_):
     u = np.random.normal(0, sigma * (upper - lower))
     return np.clip(x + u, lower, upper)
 
+
+def start_from_params(pose_x=0.0, pose_y=0.0, pose_theta=0.0, **_):
+    return pose_x, pose_y, pose_theta
+    
+def read_robots_file(robots_file, n):
+    with open(robots_file, 'r') as stream:
+        robots = yaml.safe_load(stream)
+    
+    starts = []
+    goals = []
+    for robot in robots[:n]:
+        starts.append(start_from_params(**robot))
+        goals.append( (robot['goals']['x'][0], robot['goals']['y'][0], robot['goals']['theta'][0] ) )
+    return starts, goals
+    
 class DubinsMOMAPF():
 
-    def __init__(self, n_agents=4, domain=(0.0, 100.00), radius=5.0, step=0.1, model=Vehicle.DUBINS, obstacles=None, metric=None, velocity_control=False, configuration="line", **unused_settings):
+    def __init__(self, n_agents=4, domain=(0.0, 100.00), radius=5.0, step=0.1, model=Vehicle.DUBINS, obstacles=None, metric=None, velocity_control=False, configuration="line",robots_yaml=None, **unused_settings):
         if configuration == "line":
             self.start, self.goals = line_configuration(n_agents=n_agents, domain=domain)
         elif configuration == "circle":
-            self.start  = [circle_waypoint(domain=domain, r=70, angle=i) for i in np.linspace(0, 2*np.pi, n_agents+1)[:-1]]
+            self.start = [circle_waypoint(domain=domain, r=70, angle=i) for i in np.linspace(0, 2*np.pi, n_agents+1)[:-1]]
             self.goals= [circle_waypoint(domain=domain, r=70, angle=i+np.pi) for i in np.linspace(0, 2*np.pi, n_agents+1)[:-1]]
+        elif configuration == "yaml":
+            self.start, self.goals = read_robots_file(robots_yaml, n_agents)
+            self.start = [ obstacles.metric_to_px_coordinates(*p) for p in self.start ]
+            self.goals = [ obstacles.metric_to_px_coordinates(*p) for p in self.goals ]
         else:
             print("configuration not found")
         self.r = radius
         self.step = step
         self.n_agents = n_agents
-        self.domain = domain
         self.model = model
         self._last_fig = None
         self._anim_paths = None
         self.obstacles=obstacles
         self.metric = metric
         self.velocity_control = velocity_control
+        self.domain = (0.0, np.max(obstacles.size))
         
     
     def waypoints_to_path(self, wps):
@@ -308,8 +328,6 @@ class DubinsMOMAPF():
         for agent in agents:
             plot_waypoints(agent, alpha=0.5)
         if self.obstacles is not None:
-            if plot_range is None:
-                plot_range = np.arange(*self.domain)
             self.obstacles.heatmap(plot_range=plot_range)
         self._anim_paths = None
         #step = objectives[1]/100
@@ -349,8 +367,6 @@ class DubinsMOMAPF():
         if show:
             plt.figure()
         if self.obstacles is not None:
-            if plot_range is None:
-                plot_range = np.arange(*self.domain)
             self.obstacles.heatmap(plot_range=plot_range)
         sns.scatterplot(data=df_wp, x="x", y="y", hue="agent", marker="x", palette=palette, legend=legend)
         sns.lineplot(data=df_paths, x="x", y="y", hue="agent", palette=palette, sort=False, legend=False)

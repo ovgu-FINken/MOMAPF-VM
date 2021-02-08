@@ -151,7 +151,7 @@ def waypoints_to_path(waypoints, r=1, step=0.1, r_step=0.2, model=Vehicle.DUBINS
 
 def single_agent_objectives(agents, index, r=1, step=0.1, model=None, obstacles=None, metric=None):
     paths = [waypoints_to_path(agent, r=r, step=step, model=model) for agent in agents]
-    robustness = single_robustness_from_paths(paths, i, obstacles=obstacles, metric=metric)
+    robustness = single_robustness_from_paths(paths, index, obstacles=obstacles, metric=metric)
     lp = len(paths[index])
     return robustness, lp
     
