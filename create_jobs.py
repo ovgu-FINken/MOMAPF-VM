@@ -26,8 +26,8 @@ if __name__=="__main__":
         'radius': 10, # turning radius (dubins vehicle)
         'model': Vehicle.DUBINS_ADAPTIVE, # vehicle model
         'step': 1, # step size for simulated behaviour
-        'domain': (0, 200.0), # area of operation (-100, 100) means that the vehicles will move in a square from (x=-100, y=-100) to (x=100, y=100)
-        'min_speed' : 0.2, 
+        'domain': (0, 49.0), # area of operation (-100, 100) means that the vehicles will move in a square from (x=-100, y=-100) to (x=100, y=100)
+        'min_speed' : 0.1, 
         'n_agents': 7, # number of agents
         'n_waypoints': 3, # waypoints per agent (excluding start and end)
         'n_gens': 500, # number of generations to run the algorithm
@@ -36,7 +36,7 @@ if __name__=="__main__":
         'mutpb': 0.8, # mutation rate (not applicable in nsga2)
         'mutation_settings' : mutation_settings,
 
-        'feasiblity_threshold': 99.0, # how robust a solution has to be to be regarded feasible (100-min_dist)
+        'feasiblity_threshold': 99.9, # how robust a solution has to be to be regarded feasible (100-min_dist)
         'offset': (0, 0), # offset of the map to the agents
         'map_name': "obstacles/gaps_3_easy_60.npy", # name of the obstacle-map file
         'metric': Metric.MIN, # metric to use in fitness calculation
@@ -57,69 +57,26 @@ if __name__=="__main__":
 
     s = settings.copy()
     j = job_settings.copy()
-    j["group"] = "quick"
-    j["experiment"] = "quick"
-    j["runs"] = 11
-    j["delete"] = True
-    s["n_gens"] = 50
-    s["population_size"] = 32
-    s["use_novelty"] = True
-    add_jobs_to_db(s, **j)
     
-    labyrinth = [95, 100, 105, 120]
-    gaps = [2, 3]
-    envs = []
-    for i in labyrinth:
-        for j in gaps:
-            envs = envs + [f"obstacles/gaps_{j}_medium_{i}.npy"]
-
+    
     s = settings.copy()
     j = job_settings.copy()
-    j["group"] = "circle"
-    s['configuration'] = 'circle'
-    s['map_name'] = 'obstacles/empty.npy'
-    for a in [3, 5, 7]:
+    j["group"] = "arena"
+    s['configuration'] = 'hline'
+    s['map_name'] = 'obstacles/dao_arena..npy'
+    for a in [3, 5, 7, 9]:
         for b in [2, 3, 5]:
             s["n_agents"] = a
             s["n_waypoints"] = b
-            j["experiment"] = f"circle_{a}_{b}"
+            j["experiment"] = f"arena_{a}_{b}"
             add_jobs_for_each_model(s.copy(), **j.copy())
-    
-    s = settings.copy()
-    j = job_settings.copy()
-    j["group"] = "normal"
-    for a in [3,5,7]:
-        for b in [2, 3,5]:
-            for env in envs:
-                s["n_agents"] = a
-                s["n_waypoints"] = b
-                s["map_name"] = env
-                j["experiment"] = f"{env}_{a}_{b}"
-                add_jobs_for_each_model(s.copy(), **j.copy())
 
-
-    s = settings.copy()
     s['use_novelty'] = True
     j = job_settings.copy()
-    j["group"] = "novelty"
-    for a in [3,5,7]:
-        for b in [2, 3,5]:
-            for env in envs:
-                s["n_agents"] = a
-                s["n_waypoints"] = b
-                s["map_name"] = env
-                j["experiment"] = f"nov_{env}_{a}_{b}"
-                add_jobs_for_each_model(s.copy(), **j.copy())
-
-    s = settings.copy()
-    j = job_settings.copy()
-    j["group"] = "nov_circle"
-    s['use_novelty'] = True
-    s['configuration'] = 'circle'
-    s['map_name'] = 'obstacles/empty.npy'
-    for a in [3, 5, 7]:
-        for b in [2, 3, 5]:
+    j["group"] = "dao_novelty"
+    for a in [3,5,7, 9]:
+        for b in [2, 3,5]:  
             s["n_agents"] = a
             s["n_waypoints"] = b
-            j["experiment"] = f"nov_circle_{a}_{b}"
+            j["experiment"] = f"arena_nov_{a}_{b}"
             add_jobs_for_each_model(s.copy(), **j.copy())
