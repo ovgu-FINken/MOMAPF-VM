@@ -20,8 +20,9 @@ logging.basicConfig(level=logging.INFO,
 
 def job_status_msg():
     df = jobs(engine)
-    s = ""
-    for group in df["group"].unique():
+    s = f"done: {len(df.loc[df.status.eq(JobStatus.DONE)])} / {len(df['status'])}"
+    s += f"= {100.0 * len(df.loc[df.status.eq(JobStatus.DONE)]) / len(df['status']) :.2f}% \n"
+    for group in sorted(df["group"].unique()):
         s += f"group {group}\n"
         for value in df.loc[df["group"]==group]["status"].unique():
             vc = df.loc[df["group"] == group]["status"].value_counts()
