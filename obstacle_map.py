@@ -21,9 +21,10 @@ class ObstacleMap:
                 with open(info_file, 'r') as stream:
                     info = yaml.safe_load(stream)
                 
-                value = segmentation.expand_labels(value, distance=0.15  / info['resolution'])
+                #value = segmentation.expand_labels(value, distance=0.15  / info['resolution'])
                 value = gaussian_filter(value, 5)
-                value = np.mean(value)-value
+                value = 50.0 - value
+                value[value < 0.0] = value[value < 0.0] - 10
                 self.info = info
                 self.scale = info['resolution']
                 self.origin = info['origin'][:2]
@@ -96,6 +97,13 @@ class ObstacleMap:
     def metric_to_px_coordinates(self, x, y, theta):
         x = (x - self.origin[0] ) / self.scale
         y = (y - self.origin[1] ) / self.scale
+        return x, y, theta
+    
+    def px_to_metric_coordinates(self, x, y, theta, *speed):
+        x = x * self.scale + self.origin[0]
+        y = y * self.scale + self.origin[1]
+        if len(speed) > 0:
+            return x, y, theta, speed[0]
         return x, y, theta
         
 def save_labyrinth(bar_length, difficulty="hard"):

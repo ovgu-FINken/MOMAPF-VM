@@ -22,8 +22,8 @@ def circle_waypoint(domain=(0.0, 100.0), r=75, angle=0):
     y = np.sin(angle) * r + center
     return [x, y, angle+np.pi/2]
 
-def line_configuration(n_agents=1, domain=(0.0, 200.0)):
-    dh= (domain[1] - domain[0]) / (n_agents + 1)
+def line_configuration(n_agents=1, domain=(0.0, 200.0), vertical=True):
+    dh= (domain[1] - domain[0]) / (n_agents + 1) * 0.9
     c = (domain[1] - domain[0]) / 2
     start = []
     end = []
@@ -32,17 +32,37 @@ def line_configuration(n_agents=1, domain=(0.0, 200.0)):
         oy = dh / 2
     else:
         oy = 0
-    ox = 70
+    ox = 60 * (domain[1] - domain[0]) / 200
     sx = -1
     sy = -1
     for i in range(n_agents):
-        start.append( (c + ox * sx , c - oy * sy, 0 ) )
-        end.append( (c - ox * sx, c + oy * sy, np.pi ) )
+        if vertical:
+            start.append( (c + ox * sx , c - oy * sy, 0 ) )
+            end.append( (c - ox * sx, c + oy * sy, np.pi ) )
+        else:
+            start.append( ( c - oy * sy, c + ox * sx , np.pi ) )
+            end.append( ( c + oy * sy,c - ox * sx,  np.pi ) )
+            
         if (i + n_agents) % 2 == 1:
             oy += dh
             sx = -1 * sx
         sy = -1 * sy
     return start, end
+
+def den_configuration(n_agents=3):
+    positions = [
+    (55,80,0),
+    (55,50,0),
+    (55,100,0),
+    (190,100,0),
+    (150,200,0),
+    (55,120,0),
+    (125,150,0),
+    (160,50,0),
+    (125,125,0),
+    (75,125,0),
+    ]
+    return positions[:n_agents], positions[-n_agents:]
 
 def polynomial_mut(x, sigma=0.1, p=0.5, lower=0.0, upper=1.0, **_):
     r = sigma
@@ -64,8 +84,8 @@ def gauss_mut(x, sigma=0.1, lower=0.0, upper=1.0, **_):
     return np.clip(x + u, lower, upper)
 
 
-def start_from_params(pose_x=0.0, pose_y=0.0, pose_theta=0.0, **_):
-    return pose_x, pose_y, pose_theta
+def start_from_params(x_pose=0.0, y_pose=0.0, yaw_pose=0.0, **_):
+    return x_pose, y_pose, yaw_pose
     
 def read_robots_file(robots_file, n):
     with open(robots_file, 'r') as stream:
@@ -83,6 +103,12 @@ class DubinsMOMAPF():
     def __init__(self, n_agents=4, domain=(0.0, 100.00), radius=5.0, step=0.1, model=Vehicle.DUBINS, obstacles=None, metric=None, velocity_control=False, configuration="line",robots_yaml=None, **unused_settings):
         if configuration == "line":
             self.start, self.goals = line_configuration(n_agents=n_agents, domain=domain)
+        elif configuration == "hline":
+            self.start, self.goals = line_configuration(n_agents=n_agents, domain=domain, vertical=False)
+
+        elif configuration == "den":
+            self.start, self.goals = den_configuration(n_agents=n_agents)
+            
         elif configuration == "circle":
             self.start = [circle_waypoint(domain=domain, r=70, angle=i) for i in np.linspace(0, 2*np.pi, n_agents+1)[:-1]]
             self.goals= [circle_waypoint(domain=domain, r=70, angle=i+np.pi) for i in np.linspace(0, 2*np.pi, n_agents+1)[:-1]]
@@ -367,7 +393,7 @@ class DubinsMOMAPF():
         if show:
             plt.figure()
         if self.obstacles is not None:
-            self.obstacles.heatmap(plot_range=plot_range)
+            ax = self.obstacles.heatmap(plot_range=plot_range)
         sns.scatterplot(data=df_wp, x="x", y="y", hue="agent", marker="x", palette=palette, legend=legend)
         sns.lineplot(data=df_paths, x="x", y="y", hue="agent", palette=palette, sort=False, legend=False)
         if show:
