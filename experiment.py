@@ -59,11 +59,28 @@ def hypervolume(ref, df, toolbox, objectives=("robustness", "time", "length")):
 
 def pdom(a, b, ndim=None):
     """return True if a dominates b (minimization) """
+    if ndim == 3:
+        # not worse in one
+        if a[0] > b[0]:
+            return False
+        if a[1] > b[1]:
+            return False
+        if a[2] > b[2]:
+            return False
+        # strictly better in one
+        if a[0] < b[0]:
+            return True
+        if a[1] < b[1]:
+            return True
+        if a[2] < b[2]:
+            return True
+        # all equal
+        return False
     aLTb = False
     if ndim is None:
         ndim = min(len(a), len(b))
     for fa, fb in zip(a[:ndim], b[:ndim]):
-        if not fa <= fb :
+        if not fa <= fb:
             return False
         elif fa < fb:
             aLTb = True
@@ -556,7 +573,7 @@ def jobs(db):
     return df_jobs
     
     
-def compute_combined_front(df, objectives=("robustness", "time", "length"), colname=None, groups=None, experiments=None):
+def compute_combined_front(df, objectives=("robustness", "time", "length"), colname=None, groups=None, experiments=None, filtercol=None):
     if colname is None:
         colname = "combined_front"
     if groups is None:
@@ -564,31 +581,38 @@ def compute_combined_front(df, objectives=("robustness", "time", "length"), coln
     if experiments is None:
         experiments = df["experiment"].unique()
     df.loc[df.group.isin(groups)&df.experiment.isin(experiments),colname] = False
-    view = df.loc[df.group.isin(groups)&df.experiment.isin(experiments)]
+    view = None
+    if filtercol is None:
+        view = df.loc[df.group.isin(groups)&df.experiment.isin(experiments)]
+    else:
+        view = df.loc[df.group.isin(groups)&df.experiment.isin(experiments) & filtercol]
     
     l = []
-    for i, ind in view.iterrows():
-        l.append((i, tuple([ind[o] for o in objectives])))
+    for ind in view.itertuples():
+        l.append((ind.Index, (ind.robustness, ind.time, ind.length)))
     
-    print(len(l))
+    #print(len(l))
+    ndim = len(objectives)
     a = set()
     for i in l:
         non_dom = True
         remove = set()
-        for j in a:
-            if pdom(i[1], j[1]):
-                remove.add(j)
-                continue
-            if pdom(j[1], i[1]):
+        for j in a:   
+            if pdom(j[1], i[1], ndim=ndim):
                 non_dom = False
                 break
+            if pdom(i[1], j[1], ndim=ndim):
+                remove.add(j)
+                continue
         a -= remove
         if non_dom:
             a.add(i)
-    print(len(a))
+    #print(len(a))
     
     colnr = df.columns.get_loc(colname)
-    df.iloc[[i[0] for i in a], colnr] = True
+    for i, _ in a:
+        df.iat[i, colnr] = True
+    #df.iloc[[i[0] for i in a], colnr] = True
         
     return df
 
@@ -599,19 +623,21 @@ def read_table(table, experiment=None, con=None):
     metadata = sqlalchemy.MetaData(con)
     t = sqlalchemy.Table(table, metadata, autoload=True)
     sel = sqlalchemy.select([t]).where(t.c.experiment == experiment)
-    return pd.read_sql_query(sel, con=con)
+    return pd.concat(pd.read_sql_query(sel, con=con, chunksize=1000), ignore_index=True)
     
 
-def read_experiment(db, experiment=None, verbose=False):
+def read_experiment(db, experiment=None, verbose=False, df_jobs=None):
     df_pop = read_table("populations", con=db, experiment=experiment)
-    print("finished reading populations")
+    #print("finished reading populations")
     df_stats = read_table("logbooks", con=db, experiment=experiment)
-    print("finished reading logbooks")
+    #print("finished reading logbooks")
+    
     
     
     if verbose:
         data = []
-        df_jobs = read_table("jobs", con=db, experiment=experiment)
+        if df_jobs is None:
+            df_jobs = read_table("jobs", con=db, experiment=experiment)
         for exp in df_pop["experiment"].unique():
             ji = df_pop.loc[df_pop["experiment"] == exp, "job_index"].values[0]
             settings = fetch_settings(df_jobs, job_index=ji)
@@ -622,10 +648,11 @@ def read_experiment(db, experiment=None, verbose=False):
         df_stats = df_stats.join(df.set_index("experiment"), on="experiment")
         #for group in df_pop["group"].unique():
         #    compute_combined_front(df_pop, colname="group_front", groups=[group])
-        print("finished reading settings")
+        #print("finished reading settings")
         for exp in df_pop["experiment"].unique():
             compute_combined_front(df_pop,colname="experiment_front", experiments=[exp])
-            print(f"finished computing front for {exp}")
+            #print(f"finished computing front for {exp}")
+        df_pop["experiment_front"] = df_pop["experiment_front"].astype(bool)
     return df_pop, df_stats
 
 def fetch_settings(df_jobs, job_index=None):

@@ -341,14 +341,14 @@ class DubinsMOMAPF():
     def solution_animation(self, ind, **kwargs):
         self.agents_animation(self.decode(ind), **kwargs)
     
-    def solution_plot(self, ind, plot_range=None, legend=False, show=True):
+    def solution_plot(self, ind, plot_range=None, legend=False, show=True, draw_background=True):
         wps = self.decode(ind)
         df_wp = wps_to_df(wps)
         df_paths = wps_to_df([waypoints_to_path(wp, r=self.r, step=self.step, model=self.model) for wp in wps])
         palette = sns.color_palette("muted", n_colors=self.n_agents)
         if show:
             plt.figure()
-        if self.obstacles is not None:
+        if self.obstacles is not None and draw_background:
             if plot_range is None:
                 plot_range = np.arange(*self.domain)
             self.obstacles.heatmap(plot_range=plot_range)
