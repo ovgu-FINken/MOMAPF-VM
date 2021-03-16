@@ -5,7 +5,11 @@ import cProfile
 import pstats
 import random
 import sqlalchemy
-import git
+try:
+    import git
+except ImportError:
+    git = None
+    print("could not import git module")
 import json
 import traceback
 import warnings
@@ -294,6 +298,8 @@ class Experiment:
         return archive, logbook
     
 def get_commit():
+    if git is None:
+        return ""
     repo = git.Repo(search_parent_directories=True)
     return repo.head.object.hexsha
 
@@ -386,14 +392,14 @@ class ExperimentRunner:
         if reserve:
             print(f"reserve: {job['index']}")
             self.set_job_status(job=job, status=JobStatus.RESERVED)
-            time.sleep(0.3)
+            time.sleep(0.8)
             db_job = self.fetch_job(verbose=verbose, job_index=job['index'], reserve=False)
             if db_job['pid'] == os.getpid():
                 if verbose:
                     print(f"fetched job: {job}")
                 return job
             else:
-                time.sleep(np.random.rand())
+                time.sleep(3*np.random.rand())
                 return self.fetch_job(verbose=verbose, reserve=True, job_index=job_index)
         if verbose:
             print(f"fetched job: {job}")
@@ -705,6 +711,7 @@ if __name__ == "__main__":
             runner.fetch_and_execute(job_index=i)
         
     elif args.fetch:
+        time.sleep(3 * np.random.rand())
         runner.fetch_and_execute()
         print("... done.")
         if args.loop:
