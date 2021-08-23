@@ -30,7 +30,7 @@ jupyter-client==5.3.4
 jupyter-contrib-core==0.3.3
 jupyter-core==4.6.1
 jupyter-nbextensions-configurator==0.4.1
-jupyterlab==1.2.6
+jupyterlab==1.2.21
 jupyterlab-server==1.0.6
 kiwisolver==1.1.0
 MarkupSafe==1.1.1
